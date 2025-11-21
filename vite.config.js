@@ -1,10 +1,8 @@
 import { defineConfig } from "vite";
 
-const basePath = process.env.NODE_ENV === "production" ? "/LIVE1-copy6/" : "/";
-
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   root: ".",
-  base: basePath,
+  base: mode === "production" ? "/LIVE1-copy6/" : "/",
   server: {
     open: true,
     host: "0.0.0.0",
@@ -14,7 +12,7 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
   },
-});
+}));
 
 
 

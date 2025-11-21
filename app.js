@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 /* ==========================================================================
    1. UTILS & CONSTANTS
@@ -9,6 +9,15 @@ const resolveAsset = (path) => {
   const base = (import.meta.env && import.meta.env.BASE_URL) || "/";
   const cleanPath = path.startsWith("/") ? path.slice(1) : path;
   return `${base}${cleanPath}`;
+};
+
+const resolveSound = (filename) => {
+  try {
+    return new URL(`./sounds/${filename}`, import.meta.url).href;
+  } catch (error) {
+    console.warn("Falling back to public path for sound:", filename, error);
+    return resolveAsset(`sounds/${filename}`);
+  }
 };
 
 // -- Deep Clone --
@@ -865,10 +874,16 @@ class GameStore {
 const SUPABASE_URL_FALLBACK = "https://cznwtorlerzmstnohzpq.supabase.co";
 const SUPABASE_ANON_KEY_FALLBACK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6bnd0b3JsZXJ6bXN0bm9oenBxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2NDE2NTQsImV4cCI6MjA3OTIxNzY1NH0.Uc8GakAYzlqZCV-LstJl_Xx7Kj3j_CXj7Z3GHsvqvlc";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || SUPABASE_URL_FALLBACK;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY_FALLBACK;
+const SUPABASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || SUPABASE_URL_FALLBACK;
+const SUPABASE_ANON_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || SUPABASE_ANON_KEY_FALLBACK;
 
-const supabase = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+let supabase = null;
+try {
+  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  console.log("✅ Supabase initialized:", SUPABASE_URL);
+} catch (error) {
+  console.warn("⚠️ Supabase initialization failed:", error);
+}
 const RANKING_TABLE = "rankings";
 const PLAYER_ID_STORAGE_KEY = "oshi-player-id";
 
@@ -892,25 +907,25 @@ const isRankingEnabled = Boolean(supabase);
 
 /* --- Audio System --- */
 // Updated paths to match "sounds" directory
-const BGM_MENU = new Audio(resolveAsset("sounds/menu.mp3"));
+const BGM_MENU = new Audio(resolveSound("menu.mp3"));
 BGM_MENU.loop = true;
 BGM_MENU.volume = 0.4;
 
-const BGM_GAME = new Audio(resolveAsset("sounds/play.mp3"));
+const BGM_GAME = new Audio(resolveSound("play.mp3"));
 BGM_GAME.loop = true;
 BGM_GAME.volume = 0.4;
 
 // SFX Mapping
-const SFX_BUTTON = new Audio(resolveAsset("sounds/arrow.mp3")); // fallback if start.mp3 not desired for generic
-const SFX_START = new Audio(resolveAsset("sounds/start.mp3"));
-const SFX_ARROW = new Audio(resolveAsset("sounds/arrow.mp3"));
-const SFX_END = new Audio(resolveAsset("sounds/end.mp3")); 
-const SFX_PAUSE = new Audio(resolveAsset("sounds/pause.mp3"));
-const SFX_MAIN = new Audio(resolveAsset("sounds/main.mp3")); 
-const SFX_LIGHTSTICK = new Audio(resolveAsset("sounds/Lightstick.mp3"));
-const SFX_ARIGATO = new Audio(resolveAsset("sounds/arigato.mp3"));
-const SFX_HAKUSHU = new Audio(resolveAsset("sounds/hakushu.mp3"));
-const SFX_APPEAL = new Audio(resolveAsset("sounds/AppealTime.mp3"));
+const SFX_BUTTON = new Audio(resolveSound("arrow.mp3"));
+const SFX_START = new Audio(resolveSound("start.mp3"));
+const SFX_ARROW = new Audio(resolveSound("arrow.mp3"));
+const SFX_END = new Audio(resolveSound("end.mp3"));
+const SFX_PAUSE = new Audio(resolveSound("pause.mp3"));
+const SFX_MAIN = new Audio(resolveSound("main.mp3"));
+const SFX_LIGHTSTICK = new Audio(resolveSound("Lightstick.mp3"));
+const SFX_ARIGATO = new Audio(resolveSound("arigato.mp3"));
+const SFX_HAKUSHU = new Audio(resolveSound("hakushu.mp3"));
+const SFX_APPEAL = new Audio(resolveSound("AppealTime.mp3"));
 
 let currentBgm = null;
 let isBgmUnlocked = false;
@@ -1004,7 +1019,7 @@ let langButtons = [];
 /* --- UI Elements --- */
 const screens = {
   top: document.getElementById("screen-top"),
-  game: document.getElementById("screen-game"),
+  game: document.getElementById("screen-play"),
   result: document.getElementById("screen-result"),
   history: document.getElementById("screen-history"),
 };
@@ -1012,13 +1027,13 @@ const screens = {
 const hud = {
   score: document.getElementById("hud-score"),
   success: document.getElementById("hud-success"),
-  timer: document.getElementById("hud-timer"),
-  targetText: document.getElementById("target-text"),
+  timer: document.getElementById("hud-time"),
+  targetText: document.querySelector(".color-card__name"),
   penlight: document.getElementById("penlight"),
-  penlightColor: document.querySelector(".penlight__color"),
-  messageArea: document.getElementById("message-area"),
-  feverOverlay: document.getElementById("fever-overlay"),
-  feverText: document.getElementById("fever-text"),
+  penlightColor: document.querySelector(".penlight__tube"),
+  messageArea: document.getElementById("stage-toast-layer"),
+  feverOverlay: document.getElementById("fever"),
+  feverText: document.querySelector(".fever h2"),
 };
 
 const buttons = {
@@ -1028,20 +1043,28 @@ const buttons = {
   rankingResult: document.getElementById("btn-ranking-result"),
   left: document.getElementById("btn-left"),
   right: document.getElementById("btn-right"),
-  showResult: document.getElementById("btn-show-result"),
+  showResult: document.getElementById("btn-end"),
   pause: document.getElementById("btn-pause"),
   resume: document.getElementById("btn-resume"),
   retry: document.getElementById("btn-retry"),
   top: document.getElementById("btn-top"),
   share: document.getElementById("btn-share"),
   closeRanking: document.getElementById("btn-close-ranking"),
-  submitRanking: document.getElementById("ranking-submit-button"),
+  submitRanking: document.getElementById("ranking-submit"),
 };
 
 const modals = {
-  howto: document.getElementById("modal-howto"),
+  howto: document.getElementById("howto-modal"),
   pause: document.getElementById("modal-pause"),
   ranking: document.getElementById("ranking-modal"),
+};
+
+const addListener = (el, event, handler, name = "element") => {
+  if (!el) {
+    console.warn(`⛔ Missing DOM element for listener (${name}).`);
+    return;
+  }
+  el.addEventListener(event, handler);
 };
 
 const closeButtons = document.querySelectorAll(".modal-close");
@@ -1062,11 +1085,15 @@ const store = new GameStore({
   effects: {
     onPause: () => {
       playPauseSfx();
-      modals.pause.hidden = false;
+      if (modals.pause) {
+        modals.pause.hidden = false;
+      }
     },
     onResume: () => {
       playPauseSfx();
-      modals.pause.hidden = true;
+      if (modals.pause) {
+        modals.pause.hidden = true;
+      }
     },
     onHudFlash: () => {
       hud.score.classList.remove("hud__value--pop");
@@ -1140,32 +1167,34 @@ store.subscribe(render);
 /* --- Event Listeners --- */
 
 // Start
-buttons.start.addEventListener("click", () => {
+addListener(buttons.start, "click", () => {
   unlockBgm();
   playButtonSfx();
   startGame("normal");
-});
+}, "btn-start");
 
 // How to
-buttons.howto.addEventListener("click", () => {
+addListener(buttons.howto, "click", () => {
   playButtonSfx();
-  modals.howto.hidden = false;
-});
+  if (modals.howto) {
+    modals.howto.hidden = false;
+  }
+}, "btn-howto");
 
 // Controls
-buttons.left.addEventListener("click", () => {
-  // playArrowSfx(); // onMatchToast handles this? No, rotation sound.
+addListener(buttons.left, "click", () => {
   playArrowSfx();
   store.rotate(-1);
-});
-buttons.right.addEventListener("click", () => {
+}, "btn-left");
+
+addListener(buttons.right, "click", () => {
   playArrowSfx();
   store.rotate(1);
-});
+}, "btn-right");
 
 // Keyboard controls
 document.addEventListener("keydown", (e) => {
-  if (screens.game.hidden) return;
+  if (!screens.game || screens.game.hidden) return;
   if (e.key === "ArrowLeft") {
     store.rotate(-1);
   } else if (e.key === "ArrowRight") {
@@ -1174,45 +1203,45 @@ document.addEventListener("keydown", (e) => {
 });
 
 // Pause/Resume/Retry
-buttons.pause.addEventListener("click", () => store.togglePause());
-buttons.resume.addEventListener("click", () => store.resume());
-buttons.showResult.addEventListener("click", () => {
+addListener(buttons.pause, "click", () => store.togglePause(), "btn-pause");
+addListener(buttons.resume, "click", () => store.resume(), "btn-resume");
+addListener(buttons.showResult, "click", () => {
   store.finish(); 
-  modals.pause.hidden = true;
-});
-buttons.retry.addEventListener("click", () => {
+  if (modals.pause) {
+    modals.pause.hidden = true;
+  }
+}, "btn-end");
+addListener(buttons.retry, "click", () => {
   playButtonSfx();
   startGame(store.state.mode);
-});
-buttons.top.addEventListener("click", () => {
+}, "btn-retry");
+addListener(buttons.top, "click", () => {
   playButtonSfx();
   showTopScreen();
-});
+}, "btn-top");
 
 // Share
-buttons.share.addEventListener("click", () => {
+addListener(buttons.share, "click", () => {
   playButtonSfx();
   shareResult(store.state);
-});
+}, "btn-share");
 
 // Ranking
-buttons.ranking.addEventListener("click", () => {
+const handleOpenRanking = () => {
   playButtonSfx();
   openRankingModal();
-});
-buttons.rankingResult.addEventListener("click", () => {
-  playButtonSfx();
-  openRankingModal();
-});
-buttons.closeRanking.addEventListener("click", () => {
+};
+addListener(buttons.ranking, "click", handleOpenRanking, "btn-ranking");
+addListener(buttons.rankingResult, "click", handleOpenRanking, "btn-ranking-result");
+addListener(buttons.closeRanking, "click", () => {
   playButtonSfx();
   closeRankingModal();
-});
-buttons.submitRanking.addEventListener("click", (e) => {
+}, "btn-close-ranking");
+addListener(buttons.submitRanking, "click", (e) => {
   e.preventDefault();
   playButtonSfx();
   handleRankingSubmit();
-});
+}, "ranking-submit");
 
 // Close Modals
 closeButtons.forEach((btn) => {
@@ -1226,15 +1255,12 @@ closeButtons.forEach((btn) => {
 
 // Language Switcher
 const initLanguageButtons = () => {
-  const container = document.getElementById("lang-buttons");
+  const container = document.getElementById("lang-switcher");
   if (!container) return;
-  container.innerHTML = "";
   
-  supportedLanguages.forEach((lang) => {
-    const btn = document.createElement("button");
-    btn.className = "lang-button";
-    btn.textContent = lang.toUpperCase();
-    btn.dataset.lang = lang;
+  const langButtons = container.querySelectorAll(".lang-switcher__btn");
+  langButtons.forEach((btn) => {
+    const lang = btn.dataset.lang;
     if (lang === getLanguage()) {
       btn.classList.add("active");
     }
@@ -1243,7 +1269,6 @@ const initLanguageButtons = () => {
       const newLang = setLanguage(lang);
       updateLanguageUI(newLang);
     });
-    container.appendChild(btn);
   });
 };
 
@@ -1258,7 +1283,7 @@ const updateLanguageUI = (lang) => {
   if (usernameInput) usernameInput.placeholder = t("ranking.form.usernamePlaceholder");
   if (handleInput) handleInput.placeholder = t("ranking.form.handlePlaceholder");
 
-  document.querySelectorAll(".lang-button").forEach((btn) => {
+  document.querySelectorAll(".lang-switcher__btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.lang === lang);
   });
 
@@ -1664,19 +1689,31 @@ function closeRankingModal() {
 
 /* --- Initialization --- */
 window.addEventListener("DOMContentLoaded", () => {
-  initLanguageButtons();
-  updateLanguageUI(getLanguage());
+  console.log("🎮 Game initializing...");
   
-  initAudio();
-  
-  screens.top.hidden = false;
-  screens.game.hidden = true;
-  screens.result.hidden = true;
-  screens.history.hidden = true;
-  
-  if (!isRankingEnabled) {
-    console.warn("Supabase not configured. Ranking features disabled.");
-    const rankingBtns = document.querySelectorAll("#btn-ranking, #btn-ranking-result");
-    rankingBtns.forEach(b => b.style.display = "none");
+  try {
+    console.log("📱 Screens:", screens);
+    console.log("🔘 Buttons:", buttons);
+    console.log("🎵 Audio initialized");
+    
+    initLanguageButtons();
+    updateLanguageUI(getLanguage());
+    
+    initAudio();
+    
+    if (screens.top) screens.top.hidden = false;
+    if (screens.game) screens.game.hidden = true;
+    if (screens.result) screens.result.hidden = true;
+    if (screens.history) screens.history.hidden = true;
+    
+    if (!isRankingEnabled) {
+      console.warn("Supabase not configured. Ranking features disabled.");
+      const rankingBtns = document.querySelectorAll("#btn-ranking, #btn-ranking-result");
+      rankingBtns.forEach(b => b.style.display = "none");
+    }
+    
+    console.log("✅ Game initialized successfully!");
+  } catch (error) {
+    console.error("❌ Initialization failed:", error);
   }
 });

@@ -5,16 +5,16 @@ import { MODE_SCORE } from "./src/constants/modeScore.js";
 import { createI18n } from "./src/i18n/index.js";
 import { GameStore } from "./src/state/gameStore.js";
 
-const appealImage1 = "/images/reactionaa.jpg";
-const appealImage2 = "/images/reactionbb.jpg";
-const appealImage3 = "/images/reactioncc.jpg";
-const appealImage4 = "/images/reactiondd.jpg";
+const resolvePublicImage = (filename) => {
+  const base = (import.meta.env && import.meta.env.BASE_URL) || "/";
+  return `${base}images/${filename}`;
+};
 
 const appealImageSources = [
-  appealImage1,
-  appealImage2,
-  appealImage3,
-  appealImage4,
+  resolvePublicImage("reactionaa.jpg"),
+  resolvePublicImage("reactionbb.jpg"),
+  resolvePublicImage("reactioncc.jpg"),
+  resolvePublicImage("reactiondd.jpg"),
 ];
 
 

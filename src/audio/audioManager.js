@@ -37,20 +37,22 @@ let isMuted = false;
 let bgmUnlocked = false;
 let toggleButton = null;
 
+const resolveSound = (file) => new URL(`../../sounds/${file}`, import.meta.url).href;
+
 const sfxConfig = {
-  click: { src: "./sounds/click.mp3", volume: 0.55 },
-  start: { src: "./sounds/start.mp3", volume: 0.7 },
-  arrow: { src: "./sounds/arrow.mp3", volume: 0.6 },
-  end: { src: "./sounds/end.mp3", volume: 0.65 },
-  pause: { src: "./sounds/pause.mp3", volume: 0.65 },
-  main: { src: "./sounds/main.mp3", volume: 0.6 },
-  lightstick: { src: "./sounds/lightstick.mp3", volume: 0.6 },
-  arigato: { src: "./sounds/arigato.mp3", volume: 0.6 },
-  hakushu: { src: "./sounds/hakushu.mp3", volume: 0.75 },
-  appeal: { src: "./sounds/appealTime.mp3", volume: 0.7 },
-  hakushua: { src: "./sounds/hakushua.mp3", volume: 0.7 },
-  hakushub: { src: "./sounds/hakushub.mp3", volume: 0.7 },
-  yatta: { src: "./sounds/yatta.mp3", volume: 0.75 },
+  click: { src: resolveSound("click.mp3"), volume: 0.55 },
+  start: { src: resolveSound("start.mp3"), volume: 0.7 },
+  arrow: { src: resolveSound("arrow.mp3"), volume: 0.6 },
+  end: { src: resolveSound("end.mp3"), volume: 0.65 },
+  pause: { src: resolveSound("pause.mp3"), volume: 0.65 },
+  main: { src: resolveSound("main.mp3"), volume: 0.6 },
+  lightstick: { src: resolveSound("lightstick.mp3"), volume: 0.6 },
+  arigato: { src: resolveSound("arigato.mp3"), volume: 0.6 },
+  hakushu: { src: resolveSound("hakushu.mp3"), volume: 0.75 },
+  appeal: { src: resolveSound("appealTime.mp3"), volume: 0.7 },
+  hakushua: { src: resolveSound("hakushua.mp3"), volume: 0.7 },
+  hakushub: { src: resolveSound("hakushub.mp3"), volume: 0.7 },
+  yatta: { src: resolveSound("yatta.mp3"), volume: 0.75 },
 };
 
 const levelUpSfxMap = [
@@ -80,7 +82,7 @@ const registerSfxBase = (audio) => {
 
 const getMenuBgm = () => {
   if (!menuBgm) {
-    menuBgm = createAudio("./sounds/menu.mp3", 0.8, true);
+    menuBgm = createAudio(resolveSound("menu.mp3"), 0.8, true);
     menuBgm.muted = isMuted;
     registerBgmTrack(menuBgm);
   }
@@ -89,7 +91,7 @@ const getMenuBgm = () => {
 
 const getPlayBgm = () => {
   if (!playBgm) {
-    playBgm = createAudio("./sounds/play.mp3", 0.8, true);
+    playBgm = createAudio(resolveSound("play.mp3"), 0.8, true);
     playBgm.muted = isMuted;
     registerBgmTrack(playBgm);
   }

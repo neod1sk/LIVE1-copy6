@@ -1,84 +1,885 @@
 import { createClient } from "@supabase/supabase-js";
-import { PENLIGHT_COLORS } from "./src/constants/colors.js";
-import { LEVEL_TABLE } from "./src/constants/levels.js";
-import { MODE_SCORE } from "./src/constants/modeScore.js";
-import { createI18n } from "./src/i18n/index.js";
-import { GameStore } from "./src/state/gameStore.js";
 
-const resolvePublicImage = (filename) => {
+/* ==========================================================================
+   1. UTILS & CONSTANTS (Inlined from src/constants/*.js and utils)
+   ========================================================================== */
+
+// -- Asset Resolution for GitHub Pages --
+// Automatically prepends the base path (e.g. /LIVE1-copy6/) to assets
+const resolveAsset = (path) => {
   const base = (import.meta.env && import.meta.env.BASE_URL) || "/";
-  return `${base}images/${filename}`;
+  // Remove leading slash if present to avoid double slashes
+  const cleanPath = path.startsWith("/") ? path.slice(1) : path;
+  return `${base}${cleanPath}`;
 };
 
-const appealImageSources = [
-  resolvePublicImage("reactionaa.jpg"),
-  resolvePublicImage("reactionbb.jpg"),
-  resolvePublicImage("reactioncc.jpg"),
-  resolvePublicImage("reactiondd.jpg"),
+// -- Deep Clone (Simple JSON version for state) --
+const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
+
+// -- COLORS --
+const PENLIGHT_COLORS = [
+  { name: "RED", code: "#FF0000" },
+  { name: "BLUE", code: "#0047FF" },
+  { name: "WHITE", code: "#FFFFFF" },
+  { name: "ORANGE", code: "#FFA500" },
+  { name: "GREEN", code: "#00C853" },
+  { name: "PURPLE", code: "#8000FF" },
+  { name: "PINK", code: "#FF69B4" },
+  { name: "YELLOW", code: "#FFEA00" },
+  { name: "LIGHT GREEN", code: "#90EE90" },
+  { name: "LIGHT BLUE", code: "#87CEFA" },
+  { name: "LIGHT PINK", code: "#FFB6C1" },
+  { name: "VIOLET", code: "#EE82EE" },
+  { name: "LIME", code: "#32CD32" },
+  { name: "TURQUOISE", code: "#40E0D0" },
+  { name: "HOT PINK", code: "#FF1493" },
 ];
 
+// -- LEVELS --
+const LEVEL_TABLE = [
+  { key: "lv1", max: 150, name: "初歩オタ", levelClass: "level-1", names: { ja: "初歩オタ", en: "Rookie Ota", ko: "초보 오타" } },
+  { key: "lv2", max: 200, name: "ぽんこつオタ", levelClass: "level-1", names: { ja: "ぽんこつオタ", en: "Clumsy Ota", ko: "폰코츠 오타" } },
+  { key: "lv3", max: 250, name: "見習いオタ", levelClass: "level-1", names: { ja: "見習いオタ", en: "Apprentice Ota", ko: "견습 오타" } },
+  { key: "lv4", max: 300, name: "修行オタ", levelClass: "level-1", names: { ja: "修行オタ", en: "Training Ota", ko: "수련 오타" } },
+  { key: "lv5", max: 330, name: "最前オタ", levelClass: "level-2", names: { ja: "最前オタ", en: "Front-Row Ota", ko: "최전열 오타" } },
+  { key: "lv6", max: 360, name: "常連オタ", levelClass: "level-2", names: { ja: "常連オタ", en: "Regular Ota", ko: "단골 오타" } },
+  { key: "lv7", max: 400, name: "フロアの要オタ", levelClass: "level-2", names: { ja: "フロアの要オタ", en: "Floor Anchor Ota", ko: "플로어의 핵심 오타" } },
+  { key: "lv8", max: 420, name: "ベテランオタ", levelClass: "level-2", names: { ja: "ベテランオタ", en: "Veteran Ota", ko: "베테랑 오타" } },
+  { key: "lv9", max: 450, name: "熟練オタ", levelClass: "level-2", names: { ja: "熟練オタ", en: "Skilled Ota", ko: "숙련 오타" } },
+  { key: "lv10", max: 470, name: "尊いオタ", levelClass: "level-2", names: { ja: "尊いオタ", en: "Blessed Ota", ko: "귀한 오타" } },
+  { key: "lv11", max: 490, name: "爆レスオタ", levelClass: "level-2", names: { ja: "爆レスオタ", en: "Burst Ota", ko: "폭레스 오타" } },
+  { key: "lv12", max: 500, name: "伝説のオタ", levelClass: "level-2", names: { ja: "伝説のオタ", en: "Legendary Ota", ko: "전설의 오타" } },
+  { key: "lv13", max: 530, name: "異次元オタ", levelClass: "level-3", names: { ja: "異次元オタ", en: "Otherworld Ota", ko: "이차원 오타" } },
+  { key: "lv14", max: 560, name: "限界突破オタ", levelClass: "level-3", names: { ja: "限界突破オタ", en: "Limit Break Ota", ko: "한계돌파 오타" } },
+  { key: "lv15", max: 599, name: "天界オタ", levelClass: "level-3", names: { ja: "天界オタ", en: "Celestial Ota", ko: "천계 오타" } },
+  { key: "lv16", max: Infinity, name: "オタクの神", levelClass: "level-3", names: { ja: "オタクの神", en: "God of Ota", ko: "오타쿠의 신" } },
+];
 
-
-import {
-  initAudio,
-  unlockBgm,
-  isBgmUnlocked,
-  playMenuBgm,
-  playGameBgm,
-  pauseCurrentBgm,
-  resumeCurrentBgm,
-  attemptAutoPlayMenuBgm,
-  playButtonSfx,
-  playStartSfx,
-  playArrowSfx,
-  playEndSfx,
-  playPauseSfx,
-  playMainSfx,
-  playLightstickSfx,
-  playArigatoSfx,
-  playHakushuSfx,
-  playAppealTimeSfx,
-  playLvupSfx,
-  playCountdownBeep,
-  playFeverCountdownChime,
-  resumeAudioContext,
-} from "./src/audio/audioManager.js";
-import { flashTargetCard, flashHudValues } from "./src/ui/effects.js";
-import { bindTapSafeActivation } from "./src/input/touch.js";
-
-const colors = PENLIGHT_COLORS;
-const levelTable = LEVEL_TABLE;
-const modeScore = MODE_SCORE;
-
-const fallbackSupabaseConfig = {
-  url: "https://cznwtorlerzmstnohzpq.supabase.co",
-  anonKey:
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6bnd0b3JsZXJ6bXN0bm9oenBxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2NDE2NTQsImV4cCI6MjA3OTIxNzY1NH0.Uc8GakAYzlqZCV-LstJl_Xx7Kj3j_CXj7Z3GHsvqvlc",
+// -- SCORES --
+const MODE_SCORE = {
+  easy: 6,
+  normal: 10,
+  hard: 13,
 };
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || fallbackSupabaseConfig.url;
-const supabaseAnonKey =
-  import.meta.env.VITE_SUPABASE_ANON_KEY || fallbackSupabaseConfig.anonKey;
+// -- IMAGES --
+// Use resolveAsset to ensure they load correctly on GitHub Pages
+const appealImageSources = [
+  resolveAsset("images/reactionaa.jpg"),
+  resolveAsset("images/reactionbb.jpg"),
+  resolveAsset("images/reactioncc.jpg"),
+  resolveAsset("images/reactiondd.jpg"),
+];
 
-const supabase =
-  typeof supabaseUrl === "string" &&
-  supabaseUrl &&
-  typeof supabaseAnonKey === "string" &&
-  supabaseAnonKey
-    ? createClient(supabaseUrl, supabaseAnonKey)
-    : null;
+/* ==========================================================================
+   2. I18N (Inlined from src/i18n/*.js)
+   ========================================================================== */
 
+const TRANSLATIONS = {
+  ja: {
+    "hero.title": "推しライト LIVE!!",
+    "hero.subtitle": "ペンライトを合わせて推しのレスをつかめ!🔥",
+    "top.start": "ゲームスタート",
+    "top.howto": "操作説明",
+    "top.ranking": "ランキングを見る",
+    "ranking.title": "🏆 ランキング",
+    "ranking.description": "ニックネームを入力してランキングに投稿しよう！",
+    "ranking.submitTitle": "スコアを投稿",
+    "ranking.form.usernameLabel": "ニックネーム",
+    "ranking.form.handleLabel": "Xアカウント",
+    "ranking.form.handleOptional": "(任意)",
+    "ranking.form.handleHint": "XのIDを入れると、フレンドがあなたのXアカウントを確認できます！",
+    "ranking.form.submit": "ランキングに投稿",
+    "ranking.form.success": "投稿しました！ありがとう！",
+    "ranking.form.error": "投稿に失敗しました。時間を空けて再度お試しください。",
+    "ranking.submit.inProgress": "送信中...",
+    "ranking.form.validationHandle": "XアカウントIDは英数字とアンダースコアのみ利用できます。",
+    "ranking.form.validationMissingScore": "最新のスコアがありません。ゲームをプレイして結果を投稿しよう！",
+    "ranking.noScore": "ユーザー名とXのIDを入力してランキングに参加しよう！",
+    "ranking.ready": "投稿準備OK！",
+    "ranking.currentScoreLabel": "今回のスコア",
+    "ranking.currentLevelLabel": "オタレベル",
+    "ranking.list.title": "トップスコア",
+    "ranking.list.empty": "まだ投稿がありません",
+    "ranking.list.position": "{rank}位",
+    "ranking.list.more": "500位以内のみ表示しています。",
+    "ranking.anonymous": "匿名",
+    "ranking.loading": "読み込み中...",
+    "ranking.disabled": "ランキング機能は現在利用できません（環境変数を設定してください）。",
+    "ranking.notice": "同スコアの場合は先に投稿した人が上位に表示されます。",
+    "ranking.personal.title": "あなたの順位",
+    "ranking.personal.unavailable": "まだ投稿がありません。",
+    "ranking.personal.outside": "トップ500圏外 ({rank}位)",
+    "ranking.personal.latestScore": "最新スコア",
+    "ranking.personal.latestLevel": "オタレベル",
+    "ranking.personal.deleteLatest": "最新の投稿を削除",
+    "ranking.personal.deleteConfirm": "最新の投稿を削除しますか？",
+    "ranking.personal.deleteSuccess": "投稿を削除しました",
+    "ranking.personal.deleteError": "投稿の削除に失敗しました",
+    "ranking.personal.allEntries": "あなたの履歴",
+    "ranking.personal.deleteEntryConfirm": "この投稿を削除しますか？",
+    "settings.title": "難易度・設定",
+    "mode.easy.title": "🔰EASY",
+    "mode.easy.desc": "+6点／色見本付き練習モード！",
+    "mode.normal.title": "⚡NORMAL",
+    "mode.normal.desc": "+10点／色順を覚えてガチ勝負！",
+    "mode.hard.title": "🔥HARD",
+    "mode.hard.desc": "+13点／ボタンの故障を乗り越え高得点を狙え！",
+    "howto.title": "🎮 操作ガイド",
+    "howto.step1": "スタート後、中央の「お題カラー」をチェック。",
+    "howto.step2": "左右のボタンで順番にペンライトを回して一致させます。",
+    "howto.step3": "2 秒以内に 3 回連続成功でフィーバー突入！",
+    "howto.step4": "フィーバー中はスワイプ（左右往復）でポイントとレス演出を稼ごう。",
+    "howto.imageNote": "操作説明画像は後日差し替え予定",
+    "hud.scoreLabel": "スコア",
+    "hud.successLabel": "成功回数",
+    "hud.timeLabel": "残り時間",
+    "target.title": "TARGET COLOR",
+    "controls.turnLeft": "逆回し",
+    "controls.turnRight": "順回し",
+    "play.showResult": "終了する",
+    "play.pause": "中断する",
+    "play.resume": "再開する",
+    "play.retry": "もう一度プレイ",
+    "play.toTop": "トップに戻る",
+    "fever.title": "アピールタイム！",
+    "fever.message": "ペンライトをたくさん振って爆レスをもらおう！",
+    "fever.swipe": "左右にスワイプ！",
+    "fever.timerUnit": "秒",
+    "fever.countUnit": "往復",
+    "fever.stage": "認知 Lv.{level}",
+    "result.title": "ライブ結果",
+    "result.scoreLabel": "トータルスコア",
+    "result.levelLabel": "オタレベル",
+    "result.successLabel": "成功回数",
+    "result.responsesLabel": "レス獲得数",
+    "share.button": "Xでシェア",
+    "share.note": "スクショを添えて、あなたの輝きを見せよう!✨",
+    "history.title": "最近のスコア",
+    "history.empty": "初プレイを記録しよう！",
+    "history.pointsUnit": "点",
+    "toast.glitch": "ボタンが故障！連打で復旧しよう…",
+    "toast.match": "ナイス！ +{points} 点",
+    "toast.feverStart": "アピールタイム突入！",
+    "toast.feverLevelUp": "認知レベルアップ！",
+    "toast.feverEnd": "アピールタイム終了！",
+    "share.template":
+      "オタクレベル「{levelName}」！トータルスコア{score}！\n{responses}回 推しにレスもらったよ😭💕 #推しライトLIVE #ライブアイドル",
+    "penlight.off": "OFF",
+    "transition.resultTitle": "結果発表✨",
+    "transition.resultSubtitle": "あなたのオタクレベルは？？",
+    "howto.section.basics.title": "⭐ 基本操作",
+    "howto.section.basics.item1": "・スタート後に「TARGET COLOR」を確認。",
+    "howto.section.basics.item2": "・左右ボタンでペンライトの色を切り替え、「TARGET COLOR」と一致させると得点が入ります。",
+    "howto.section.basics.item3": "・2秒以内に3回成功すると「アピールタイム」に突入します。",
+    "howto.section.fever.title": "⭐ アピールタイム",
+    "howto.section.fever.item1": "・左右スワイプでペンライトを振ると10 回ごとに +10pt を獲得、さらに推しのレス演出もレベルアップします。",
+    "howto.section.fever.item2": "・アピールタイムは 10 秒間続き、その間メインタイマーは停止します。",
+    "howto.section.fever.item3": "・終了後は自動で通常モードに戻ります。",
+    "howto.section.scoring.title": "⭐ 通常モードの得点（1回成功ごと）",
+    "howto.section.scoring.item1": "・EASY：+6pt",
+    "howto.section.scoring.item2": "・NORMAL：+10pt",
+    "howto.section.scoring.item3": "・HARD：+13pt",
+    "howto.section.feverScoring.title": "アピールタイム中の得点",
+    "howto.section.feverScoring.item1": "左右スワイプ 10 回ごとに +10pt を獲得。",
+    "howto.section.feverScoring.item2": "同時にレス獲得数も増え、演出がさらに華やかになります。",
+    "ranking.form.usernamePlaceholder": "例：ペンライト太郎",
+    "ranking.form.handlePlaceholder": "例：oshi_light（@は自動で付きます）",
+  },
+  en: {
+    "hero.title": "OshiLight LIVE!!",
+    "hero.subtitle": "Sync Your Light stick and Catch Your Oshi’s Reaction!🔥",
+    "top.start": "Start Game",
+    "top.howto": "How to Play",
+    "top.ranking": "View Ranking",
+    "ranking.title": "🏆 Leaderboard",
+    "ranking.description": "Enter your nickname and submit your score!",
+    "ranking.submitTitle": "Submit Score",
+    "ranking.form.usernameLabel": "Nickname",
+    "ranking.form.handleLabel": "X Account",
+    "ranking.form.handleOptional": "(Optional)",
+    "ranking.form.handleHint": "Entering your X ID lets others visit your profile!",
+    "ranking.form.submit": "Send to Leaderboard",
+    "ranking.form.success": "Thanks! Your score is now on the board!",
+    "ranking.form.error": "Submission failed. Please try again shortly.",
+    "ranking.submit.inProgress": "Submitting...",
+    "ranking.form.validationHandle": "Only letters, numbers, and underscores are allowed in @ID.",
+    "ranking.form.validationMissingScore": "No recent score found. Play a round and submit afterwards.",
+    "ranking.noScore": "No recent score found. Play a round and submit your result!",
+    "ranking.ready": "Enter your name and @ID to join the leaderboard!",
+    "ranking.currentScoreLabel": "Current Score",
+    "ranking.currentLevelLabel": "Ota Level",
+    "ranking.list.title": "Top 500",
+    "ranking.list.empty": "No entries yet.",
+    "ranking.list.position": "Rank {rank}",
+    "ranking.list.more": "Only the Top 500 entries are shown.",
+    "ranking.anonymous": "Anonymous fan",
+    "ranking.loading": "Loading...",
+    "ranking.disabled": "Leaderboard is unavailable. Please set the environment keys.",
+    "ranking.notice": "Ties are broken by the earlier submission time.",
+    "ranking.personal.title": "Your Placement",
+    "ranking.personal.unavailable": "You haven't submitted a score yet.",
+    "ranking.personal.outside": "You are outside the Top 500, but your rank is {rank}.",
+    "ranking.personal.latestScore": "Latest Score",
+    "ranking.personal.latestLevel": "Ota Level",
+    "ranking.personal.deleteLatest": "Delete Latest Submission",
+    "ranking.personal.deleteConfirm": "Delete your latest submission? This action cannot be undone.",
+    "ranking.personal.deleteSuccess": "Submission deleted.",
+    "ranking.personal.deleteError": "Failed to delete. Please try again later.",
+    "ranking.personal.allEntries": "Your History",
+    "ranking.personal.deleteEntryConfirm": "Delete this submission? This action cannot be undone.",
+    "settings.title": "Difficulty & Settings",
+    "mode.easy.title": "🔰EASY",
+    "mode.easy.desc": "+6 pts / Practice with color hints!",
+    "mode.normal.title": "⚡NORMAL",
+    "mode.normal.desc": "+10 pts / Remember the colors and challenge yourself!",
+    "mode.hard.title": "🔥HARD",
+    "mode.hard.desc": "+13 pts / Beat the glitches and hit the high score!",
+    "howto.title": "🎮 Gameplay Guide",
+    "howto.step1": "After starting, check the target color at the top.",
+    "howto.step2": "Spin the penlight left/right to match the target color.",
+    "howto.step3": "Match 3 times within 2 seconds to trigger Fever Time!",
+    "howto.step4": "During Fever, swipe left and right to pile up points and responses.",
+    "howto.imageNote": "A detailed how-to image will be added soon.",
+    "hud.scoreLabel": "Score",
+    "hud.successLabel": "Matches",
+    "hud.timeLabel": "Time Left",
+    "target.title": "TARGET COLOR",
+    "controls.turnLeft": "Spin Left",
+    "controls.turnRight": "Spin Right",
+    "play.showResult": "Exit",
+    "play.pause": "Pause",
+    "play.resume": "Resume",
+    "play.retry": "Play Again",
+    "play.toTop": "Back to Top",
+    "fever.title": "Appeal Time!",
+    "fever.message": "Swing your Light Stick like crazy and earn mega reactions!",
+    "fever.swipe": "Swipe left and right!",
+    "fever.timerUnit": "sec",
+    "fever.countUnit": "swings",
+    "fever.stage": "RECOGNITION Lv.{level}",
+    "result.title": "Live Results",
+    "result.scoreLabel": "Total Score",
+    "result.levelLabel": "Ota Level",
+    "result.successLabel": "Matches",
+    "result.responsesLabel": "Responses",
+    "share.button": "Share on X",
+    "share.note": "Add a screenshot to make it shine brighter!✨",
+    "history.title": "Recent Scores",
+    "history.empty": "Play once to record your first score!",
+    "history.pointsUnit": "pts",
+    "toast.glitch": "Button malfunction! Tap rapidly to fix...",
+    "toast.match": "Nice! +{points} pts",
+    "toast.feverStart": "Appeal Time Start!",
+    "toast.feverLevelUp": "RECOGNITION LEVEL UP!",
+    "toast.feverEnd": "Appeal Time End!",
+    "share.template":
+      'Ota Level "{levelName}"! Total score {score}!\nGot {responses} responses from my idol 😭💕 #OshiLightLIVE #IdolLive',
+    "penlight.off": "OFF",
+    "transition.resultTitle": "RESULT!!",
+    "transition.resultSubtitle": "What’s Your Ota Level??",
+    "howto.section.basics.title": "⭐ Basic Controls",
+    "howto.section.basics.item1": "・After the game starts, check the TARGET COLOR.",
+    "howto.section.basics.item2": "・Use the left/right buttons to change your lightstick color and match it to the TARGET COLOR to earn points.",
+    "howto.section.basics.item3": "・Match 3 times within 2 seconds to activate Appeal Time.",
+    "howto.section.fever.title": "⭐ Appeal Time",
+    "howto.section.fever.item1": "・Swipe left and right to swing your lightstick. Every 10 swings gives you +10 pt, and your Oshi’s reaction animation levels up.",
+    "howto.section.fever.item2": "・Appeal Time lasts for 10 seconds, and the main timer pauses during this mode.",
+    "howto.section.fever.item3": "・When it ends, the game automatically returns to normal play.",
+    "howto.section.scoring.title": "⭐ Normal Mode Scoring (per successful match)",
+    "howto.section.scoring.item1": "・EASY: +6 pts",
+    "howto.section.scoring.item2": "・NORMAL: +10 pts",
+    "howto.section.scoring.item3": "・HARD: +13 pts",
+    "howto.section.feverScoring.title": "Appeal Time Scoring",
+    "howto.section.feverScoring.item1": "Earn +10 pts for every 10 swings.",
+    "howto.section.feverScoring.item2": "Responses also increase, making the stage effects flashier.",
+    "ranking.form.usernamePlaceholder": "e.g. John Doe",
+    "ranking.form.handlePlaceholder": "e.g. oshi_light (@ is added automatically)",
+  },
+  ko: {
+    "hero.title": "오시 라이트 LIVE!!",
+    "hero.subtitle": "응원봉을 맞추고 오시의 레스를 잡아라!🔥",
+    "top.start": "게임 시작",
+    "top.howto": "조작 안내",
+    "top.ranking": "랭킹 보기",
+    "ranking.title": "🏆 랭킹",
+    "ranking.description": "닉네임을 입력하고 랭킹에 참여하세요!",
+    "ranking.submitTitle": "스코어 등록",
+    "ranking.form.usernameLabel": "닉네임",
+    "ranking.form.handleLabel": "X 계정",
+    "ranking.form.handleOptional": "(선택)",
+    "ranking.form.handleHint": "X ID를 입력하면 친구들이 계정을 확인할 수 있어요!",
+    "ranking.form.submit": "랭킹에 등록",
+    "ranking.form.success": "등록 완료! 반짝반짝!",
+    "ranking.form.error": "등록에 실패했습니다. 잠시 후 다시 시도해주세요.",
+    "ranking.submit.inProgress": "전송 중...",
+    "ranking.form.validationHandle": "@ID는 영문, 숫자, 밑줄만 사용할 수 있습니다.",
+    "ranking.form.validationMissingScore": "최근 스코어가 없습니다. 플레이 후 등록해주세요.",
+    "ranking.noScore": "최근 스코어가 없습니다. 게임을 플레이하고 결과를 등록해보세요!",
+    "ranking.ready": "유저명과 @ID를 입력하고 랭킹에 등록해보세요!",
+    "ranking.currentScoreLabel": "이번 스코어",
+    "ranking.currentLevelLabel": "오타 레벨",
+    "ranking.list.title": "Top 500",
+    "ranking.list.empty": "아직 등록된 기록이 없습니다.",
+    "ranking.list.position": "{rank} 위",
+    "ranking.list.more": "상위 500위까지만 표시됩니다.",
+    "ranking.anonymous": "익명 오타쿠",
+    "ranking.loading": "불러오는 중...",
+    "ranking.disabled": "랭킹 기능을 사용할 수 없습니다. 환경 변수를 설정해주세요.",
+    "ranking.notice": "동점일 경우 먼저 등록한 기록이 상위에 표시됩니다.",
+    "ranking.personal.title": "나의 순위",
+    "ranking.personal.unavailable": "아직 등록된 스코어가 없습니다.",
+    "ranking.personal.outside": "500위 밖이지만, 현재 순위는 {rank} 위입니다.",
+    "ranking.personal.latestScore": "최신 스코어",
+    "ranking.personal.latestLevel": "오타 레벨",
+    "ranking.personal.deleteLatest": "최신 기록 삭제",
+    "ranking.personal.deleteConfirm": "최신 기록을 삭제할까요? (되돌릴 수 없습니다)",
+    "ranking.personal.deleteSuccess": "삭제되었습니다.",
+    "ranking.personal.deleteError": "삭제에 실패했습니다. 잠시 후 다시 시도해주세요.",
+    "ranking.personal.allEntries": "나의 기록",
+    "ranking.personal.deleteEntryConfirm": "이 기록을 삭제할까요? (되돌릴 수 없습니다)",
+    "settings.title": "난이도 · 설정",
+    "mode.easy.title": "🔰EASY",
+    "mode.easy.desc": "+6점 / 색상 예시가 있는 연습 모드!",
+    "mode.normal.title": "⚡NORMAL",
+    "mode.normal.desc": "+10점 / 색 순서를 외우고 진짜 승부!",
+    "mode.hard.title": "🔥HARD",
+    "mode.hard.desc": "+13점 / 버튼 오류를 뚫고 최고 점수 도전!",
+    "howto.title": "🎮 조작 가이드",
+    "howto.step1": "시작 후 상단의 목표 색을 확인하세요.",
+    "howto.step2": "좌우 버튼으로 펜라이트를 돌려 색을 맞춥니다.",
+    "howto.step3": "2초 안에 3회 연속 성공 시 피버 타임 진입!",
+    "howto.step4": "피버 중에는 좌우 스와이프로 포인트와 레스를 모으세요.",
+    "howto.imageNote": "조작 설명 이미지는 추후 교체 예정",
+    "hud.scoreLabel": "스코어",
+    "hud.successLabel": "성공 횟수",
+    "hud.timeLabel": "남은 시간",
+    "target.title": "TARGET COLOR",
+    "controls.turnLeft": "왼쪽 회전",
+    "controls.turnRight": "오른쪽 회전",
+    "play.showResult": "종료하기",
+    "play.pause": "중단하기",
+    "play.resume": "재개하기",
+    "play.retry": "다시 플레이",
+    "play.toTop": "처음으로 돌아가기",
+    "fever.title": "어필 타임!",
+    "fever.message": "응원봉을 힘껏 흔들어서 폭레스를 받아라!",
+    "fever.swipe": "좌우로 스와이프!",
+    "fever.timerUnit": "초",
+    "fever.countUnit": "회",
+    "fever.stage": "인지도 Lv.{level}",
+    "result.title": "라이브 결과",
+    "result.scoreLabel": "토탈 스코어",
+    "result.levelLabel": "오타 레벨",
+    "result.successLabel": "성공 횟수",
+    "result.responsesLabel": "레스 획득수",
+    "share.button": "X에 공유",
+    "share.note": "스크린샷을 첨부하면 더 빛나요!✨",
+    "history.title": "최근 스코어",
+    "history.empty": "첫 플레이를 기록해보자!",
+    "history.pointsUnit": "점",
+    "toast.glitch": "버튼이 고장났어! 연타해서 복구하자…",
+    "toast.match": "좋아! +{points}점",
+    "toast.feverStart": "어필타임 시작!",
+    "toast.feverLevelUp": "인지도 레벨업!",
+    "toast.feverEnd": "어필타임 끝!",
+    "share.template":
+      '오타쿠 레벨 "{levelName}"! 토탈 스코어 {score}!\n{responses}번 오시에게서 레스를 받았어 😭💕 #오시라이트LIVE #아이돌라이브',
+    "penlight.off": "OFF",
+    "transition.resultTitle": "결과 발표✨",
+    "transition.resultSubtitle": "당신의 오타 레벨은??",
+    "howto.section.basics.title": "⭐ 기본 조작",
+    "howto.section.basics.item1": "・시작 후 \"TARGET COLOR\"를 확인하세요.",
+    "howto.section.basics.item2": "・좌우 버튼으로 응원봉 색을 변경해 \"TARGET COLOR\"와 일치시키면 점수를 얻습니다.",
+    "howto.section.basics.item3": "・2초 안에 3회 성공하면 어필 타임이 시작됩니다.",
+    "howto.section.fever.title": "⭐ 어필 타임",
+    "howto.section.fever.item1": "・좌우 스와이프로 응원봉을 흔들면 10번마다 +10pt를 획득하고, 오시의 레스 연출도 레벨업됩니다.",
+    "howto.section.fever.item2": "・어필 타임은 10초간 유지되며, 그동안 메인 타이머는 일시 정지됩니다.",
+    "howto.section.fever.item3": "・종료 후 자동으로 일반 모드로 돌아갑니다.",
+    "howto.section.scoring.title": "⭐ 일반 모드 점수 (1회 성공 기준)",
+    "howto.section.scoring.item1": "・EASY：+6pt",
+    "howto.section.scoring.item2": "・NORMAL：+10pt",
+    "howto.section.scoring.item3": "・HARD：+13pt",
+    "howto.section.feverScoring.title": "어필 타임 점수",
+    "howto.section.feverScoring.item1": "좌우 스와이프 10회마다 +10점을 획득합니다.",
+    "howto.section.feverScoring.item2": "동시에 레스 획득수도 늘어나 연출이 더욱 화려해집니다.",
+    "ranking.form.usernamePlaceholder": "예시: 홍길동",
+    "ranking.form.handlePlaceholder": "예시: oshi_light（@는 자동으로 붙어요）",
+  },
+};
+
+const createI18n = () => {
+  const STORAGE_KEY = "oshiLang";
+  const SUPPORTED_LANGUAGES = ["ja", "en", "ko"];
+  let currentLang = loadLanguage();
+
+  function loadLanguage() {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored && SUPPORTED_LANGUAGES.includes(stored)) {
+        return stored;
+      }
+    } catch (error) {
+      console.warn("Language preference read failed:", error);
+    }
+    return "ja";
+  }
+
+  function saveLanguage(nextLang) {
+    try {
+      localStorage.setItem(STORAGE_KEY, nextLang);
+    } catch (error) {
+      console.warn("Language preference write failed:", error);
+    }
+  }
+
+  const translateTemplate = (template, params = {}) =>
+    template.replace(/\{(\w+)\}/g, (_, key) =>
+      Object.prototype.hasOwnProperty.call(params, key) ? params[key] : `{${key}}`
+    );
+
+  const translate = (key, params = {}) => {
+    const activePack = TRANSLATIONS[currentLang] || TRANSLATIONS.ja;
+    const fallback = TRANSLATIONS.ja || {};
+    let template = activePack[key];
+    if (template === undefined || template === null) {
+      template = fallback[key];
+    }
+    if (template === undefined || template === null) {
+      template = key;
+    }
+    return translateTemplate(template, params);
+  };
+
+  const setLanguage = (lang) => {
+    const nextLang = SUPPORTED_LANGUAGES.includes(lang) ? lang : "ja";
+    currentLang = nextLang;
+    saveLanguage(nextLang);
+    document.documentElement.setAttribute("lang", nextLang);
+    return currentLang;
+  };
+
+  const getLanguage = () => currentLang;
+
+  return {
+    t: translate,
+    setLanguage,
+    getLanguage,
+    supportedLanguages: SUPPORTED_LANGUAGES,
+  };
+};
+
+/* ==========================================================================
+   3. GAME STATE (Inlined from src/state/gameStore.js)
+   ========================================================================== */
+
+const noop = () => {};
+
+const defaultEffects = {
+  onPause: noop,
+  onResume: noop,
+  onHudFlash: noop,
+  onTargetFlash: noop,
+  onMatchToast: noop,
+  onGlitchToast: noop,
+  onFeverStart: noop,
+  onFeverLevelUp: noop,
+  onFeverEnd: noop,
+  onFeverSwing: noop,
+  onTransitionStart: noop,
+  onTransitionComplete: noop,
+};
+
+class GameStore {
+  constructor({ colors, modeScore, t, random = Math.random, effects = {} }) {
+    this.colors = colors;
+    this.modeScore = modeScore;
+    this.translate = t;
+    this.random = random;
+    this.effects = { ...defaultEffects, ...effects };
+
+    this.initialState = {
+      mode: "easy",
+      timeLeft: 40,
+      score: 0,
+      successCount: 0,
+      streak: 0,
+      paused: false,
+      currentIndex: null,
+      targetIndex: 0,
+      responses: 0,
+      lastSuccessTimes: [],
+      fever: { active: false, timeLeft: 10, swingCount: 0, responseStage: 0 },
+      isTransitioning: false,
+      hardGlitch: { cooling: false, pendingPresses: 0, timerId: null },
+      timers: { main: null, fever: null },
+    };
+    this.state = deepClone(this.initialState);
+    this.listeners = new Set();
+    this.transitionTimeout = null;
+  }
+
+  subscribe(listener) {
+    this.listeners.add(listener);
+    listener(this.state);
+    return () => this.listeners.delete(listener);
+  }
+
+  set(partial) {
+    this.state = { ...this.state, ...partial };
+    this.emit();
+  }
+
+  update(mapper) {
+    this.state = mapper({ ...this.state });
+    this.emit();
+  }
+
+  emit() {
+    this.listeners.forEach((listener) => listener(this.state));
+  }
+
+  reset() {
+    this.clearTimers();
+    const existingTimer =
+      this.state && this.state.hardGlitch ? this.state.hardGlitch.timerId : undefined;
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+    this.state = deepClone(this.initialState);
+    this.state.targetIndex = this.randomTargetIndex();
+    this.emit();
+  }
+
+  randomTargetIndex() {
+    return Math.floor(this.random() * this.colors.length);
+  }
+
+  start(mode) {
+    this.reset();
+    this.update((state) => ({
+      ...state,
+      mode,
+      timeLeft: 40,
+      currentIndex: null,
+      targetIndex: this.randomTargetIndex(),
+      paused: false,
+    }));
+    this.startMainTimer();
+  }
+
+  startMainTimer() {
+    this.clearTimer("main");
+    const tick = () => {
+      this.update((state) => {
+        if (state.paused) return state;
+        if (state.fever.active) return state;
+        const nextTime = state.timeLeft - 1;
+        if (nextTime <= 0) {
+          this.finish();
+          return { ...state, timeLeft: 0 };
+        }
+        return { ...state, timeLeft: nextTime };
+      });
+    };
+    this.state.timers.main = setInterval(tick, 1000);
+  }
+
+  clearTimer(key) {
+    if (this.state.timers[key]) {
+      clearInterval(this.state.timers[key]);
+      this.state.timers[key] = null;
+    }
+  }
+
+  clearTimers() {
+    Object.keys(this.state.timers).forEach((key) => this.clearTimer(key));
+  }
+
+  togglePause() {
+    if (this.state.paused) {
+      this.resume();
+    } else {
+      this.pause();
+    }
+  }
+
+  pause() {
+    if (this.state.paused) return;
+    this.effects.onPause(this.state);
+    this.clearTimers();
+    this.update((state) => ({
+      ...state,
+      paused: true,
+      timers: { ...state.timers, main: null, fever: null },
+    }));
+  }
+
+  resume() {
+    if (!this.state.paused) return;
+    this.update((state) => ({
+      ...state,
+      paused: false,
+    }));
+    if (this.state.fever.active) {
+      this.startFeverTimer();
+    } else if (this.state.timeLeft > 0) {
+      this.startMainTimer();
+    }
+    this.effects.onResume(this.state);
+  }
+
+  rotate(direction) {
+    let matched = false;
+    this.update((state) => {
+      if (state.paused) return state;
+      if (state.fever.active) return state;
+
+      let workingState = state;
+      if (state.mode === "hard" && workingState.currentIndex !== null) {
+        const handled = this.handleHardGlitch(state);
+        workingState = handled.state;
+        if (handled.skip) {
+          return workingState;
+        }
+      }
+
+      let nextIndex;
+      if (workingState.currentIndex === null) {
+        nextIndex = 0;
+      } else {
+        nextIndex =
+          (workingState.currentIndex + direction + this.colors.length) %
+          this.colors.length;
+      }
+
+      matched = nextIndex === workingState.targetIndex;
+      return { ...workingState, currentIndex: nextIndex };
+    });
+
+    if (matched) {
+      this.handleMatch();
+    }
+  }
+
+  handleHardGlitch(state) {
+    const glitch = { ...state.hardGlitch };
+    let skip = false;
+
+    if (glitch.pendingPresses > 0) {
+      glitch.pendingPresses -= 1;
+      skip = true;
+    } else if (!glitch.cooling && this.random() < 0.25) {
+      glitch.pendingPresses = Math.floor(this.random() * 3) + 2;
+      glitch.cooling = true;
+      skip = true;
+      glitch.timerId = setTimeout(() => {
+        this.update((s) => ({
+          ...s,
+          hardGlitch: { ...s.hardGlitch, cooling: false, timerId: null },
+        }));
+      }, 2000);
+      this.effects.onGlitchToast({
+        message: this.translate("toast.glitch"),
+        variant: "danger",
+      });
+    }
+
+    return {
+      state: { ...state, hardGlitch: glitch },
+      skip,
+    };
+  }
+
+  handleMatch() {
+    const { mode } = this.state;
+    const points = this.modeScore[mode] || 0;
+    const now = Date.now();
+
+    this.update((state) => {
+      const lastSuccessTimes = [...state.lastSuccessTimes, now].filter(
+        (t) => now - t <= 2000
+      );
+      const streak = state.streak + 1;
+      const newScore = state.score + points;
+      const successCount = state.successCount + 1;
+
+      return {
+        ...state,
+        score: newScore,
+        successCount,
+        streak,
+        lastSuccessTimes,
+        targetIndex: this.randomTargetIndex(),
+      };
+    });
+
+    this.effects.onHudFlash();
+    this.effects.onTargetFlash();
+
+    if (!this.state.fever.active) {
+      this.effects.onMatchToast({
+        message: this.translate("toast.match", { points }),
+        variant: "success",
+        options: { placement: "stage" },
+      });
+    }
+
+    const { fever, lastSuccessTimes, streak } = this.state;
+    if (!fever.active && lastSuccessTimes.length >= 3 && streak >= 3) {
+      this.enterFever();
+    }
+  }
+
+  enterFever() {
+    this.update((state) => ({
+      ...state,
+      fever: {
+        active: true,
+        timeLeft: 10,
+        swingCount: 0,
+        responseStage: 0,
+      },
+    }));
+    this.clearTimer("main");
+    this.startFeverTimer();
+    this.effects.onFeverStart({
+      message: this.translate("toast.feverStart"),
+    });
+  }
+
+  startFeverTimer() {
+    this.clearTimer("fever");
+    this.state.timers.fever = setInterval(() => {
+      this.update((state) => {
+        if (!state.fever.active) return state;
+        if (state.paused) return state;
+        const nextTime = state.fever.timeLeft - 1;
+        if (nextTime <= 0) {
+          this.exitFever();
+          return {
+            ...state,
+            fever: { ...state.fever, active: false, timeLeft: 0 },
+          };
+        }
+        return {
+          ...state,
+          fever: { ...state.fever, timeLeft: nextTime },
+        };
+      });
+    }, 1000);
+  }
+
+  swing(direction) {
+    if (!this.state.fever.active || this.state.paused) return;
+    this.update((state) => {
+      const swingCountRaw = state.fever.swingCount + 1;
+      const completedRoundTrip = swingCountRaw % 2 === 0;
+      const roundTripCount = Math.floor(swingCountRaw / 2);
+      if (completedRoundTrip) {
+        this.effects.onFeverSwing({ roundTripCount });
+      }
+      const previousRoundTrips = Math.floor(state.fever.swingCount / 2);
+      let { responseStage } = state.fever;
+      let score = state.score;
+      let responses = state.responses;
+
+      if (completedRoundTrip && roundTripCount > 0 && roundTripCount % 10 === 0) {
+        score += 10;
+        responses += 1;
+      }
+
+      if (
+        completedRoundTrip &&
+        roundTripCount > 0 &&
+        roundTripCount % 10 === 0 &&
+        previousRoundTrips % 10 !== 0
+      ) {
+        responseStage += 1;
+        this.effects.onFeverLevelUp({
+          message: this.translate("toast.feverLevelUp"),
+          level: responseStage,
+        });
+      }
+
+      return {
+        ...state,
+        score,
+        responses,
+        fever: {
+          ...state.fever,
+          swingCount: swingCountRaw,
+          responseStage: responseStage,
+        },
+      };
+    });
+  }
+
+  exitFever() {
+    this.clearTimer("fever");
+    this.update((state) => ({
+      ...state,
+      fever: {
+        ...state.fever,
+        active: false,
+        timeLeft: 10,
+        swingCount: 0,
+        responseStage: 0,
+      },
+      streak: 0,
+      lastSuccessTimes: [],
+    }));
+    this.startMainTimer();
+    this.effects.onFeverEnd({
+      message: this.translate("toast.feverEnd"),
+    });
+  }
+
+  finish() {
+    this.clearTimers();
+    if (this.transitionTimeout) {
+      clearTimeout(this.transitionTimeout);
+      this.transitionTimeout = null;
+    }
+    this.update((state) => ({
+      ...state,
+      paused: false,
+      timers: { ...state.timers, main: null, fever: null },
+      isTransitioning: true,
+    }));
+    this.effects.onTransitionStart();
+    const transitionDuration = 1000;
+    const finalizeResult = () => {
+      this.update((state) => ({
+        ...state,
+        isTransitioning: false,
+      }));
+      this.effects.onTransitionComplete(this.state);
+    };
+    this.transitionTimeout = setTimeout(finalizeResult, transitionDuration);
+  }
+}
+
+/* ==========================================================================
+   4. MAIN APP LOGIC
+   ========================================================================== */
+
+/* --- Supabase Setup --- */
+const SUPABASE_URL_FALLBACK = "https://cznwtorlerzmstnohzpq.supabase.co";
+const SUPABASE_ANON_KEY_FALLBACK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6bnd0b3JsZXJ6bXN0bm9oenBxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2NDE2NTQsImV4cCI6MjA3OTIxNzY1NH0.Uc8GakAYzlqZCV-LstJl_Xx7Kj3j_CXj7Z3GHsvqvlc";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || SUPABASE_URL_FALLBACK;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY_FALLBACK;
+
+const supabase = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const RANKING_TABLE = "rankings";
 const PLAYER_ID_STORAGE_KEY = "oshi-player-id";
 
 const getOrCreatePlayerId = () => {
   try {
     const stored = localStorage.getItem(PLAYER_ID_STORAGE_KEY);
-    if (stored) {
-      return stored;
-    }
-    const generated =
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    if (stored) return stored;
+    const generated = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     localStorage.setItem(PLAYER_ID_STORAGE_KEY, generated);
@@ -92,1863 +893,791 @@ const getOrCreatePlayerId = () => {
 const playerId = getOrCreatePlayerId();
 const isRankingEnabled = Boolean(supabase);
 
+/* --- Audio System (Consolidated & Refactored) --- */
+const BGM_MENU = new Audio(resolveAsset("audio/maou_bgm_8bit13.mp3"));
+BGM_MENU.loop = true;
+BGM_MENU.volume = 0.4;
+
+const BGM_GAME = new Audio(resolveAsset("audio/maou_bgm_8bit26.mp3"));
+BGM_GAME.loop = true;
+BGM_GAME.volume = 0.4;
+
+const SFX_BUTTON = new Audio(resolveAsset("audio/se_button.mp3"));
+const SFX_START = new Audio(resolveAsset("audio/se_start.mp3"));
+const SFX_ARROW = new Audio(resolveAsset("audio/se_arrow.mp3"));
+const SFX_END = new Audio(resolveAsset("audio/se_end.mp3")); // Also used as Result BGM
+const SFX_PAUSE = new Audio(resolveAsset("audio/se_pause.mp3"));
+const SFX_MAIN = new Audio(resolveAsset("audio/se_main.mp3")); // Level up sound?
+const SFX_LIGHTSTICK = new Audio(resolveAsset("audio/se_lightstick.mp3"));
+const SFX_ARIGATO = new Audio(resolveAsset("audio/voice_arigato.mp3"));
+const SFX_HAKUSHU = new Audio(resolveAsset("audio/se_hakushu.mp3"));
+const SFX_APPEAL = new Audio(resolveAsset("audio/maou_se_8bit24.mp3"));
+
+let currentBgm = null;
+let isBgmUnlocked = false;
+
+const initAudio = () => {
+  // Try to resume AudioContext if it exists (not using web audio api directly here but good practice)
+  // Preload critical audio
+  [BGM_MENU, BGM_GAME, SFX_END, SFX_START].forEach(a => a.load());
+};
+
+const unlockBgm = () => {
+  if (isBgmUnlocked) return;
+  isBgmUnlocked = true;
+  // Attempt to play and immediately pause to unlock audio on iOS/Android
+  [BGM_MENU, BGM_GAME, SFX_END].forEach((audio) => {
+    audio.play().then(() => {
+      audio.pause();
+      audio.currentTime = 0;
+    }).catch(() => {});
+  });
+};
+
+const stopAllBgm = () => {
+  [BGM_MENU, BGM_GAME, SFX_END].forEach(audio => {
+    audio.pause();
+    audio.currentTime = 0;
+  });
+  currentBgm = null;
+};
+
+const playBgm = (audioObj) => {
+  if (!isBgmUnlocked) return;
+  if (currentBgm === audioObj && !audioObj.paused) return;
+  
+  stopAllBgm();
+  currentBgm = audioObj;
+  audioObj.play().catch(e => console.warn("BGM play failed:", e));
+};
+
+// SFX Functions
+const playSfx = (audioObj) => {
+  if (!isBgmUnlocked) return;
+  const clone = audioObj.cloneNode();
+  clone.volume = audioObj.volume || 1.0;
+  clone.play().catch(e => console.warn("SFX play failed:", e));
+};
+
+const playButtonSfx = () => playSfx(SFX_BUTTON);
+const playStartSfx = () => playSfx(SFX_START);
+const playArrowSfx = () => playSfx(SFX_ARROW);
+const playPauseSfx = () => playSfx(SFX_PAUSE);
+const playMainSfx = () => playSfx(SFX_MAIN); // Used for fever level up
+const playLightstickSfx = () => playSfx(SFX_LIGHTSTICK);
+const playArigatoSfx = () => playSfx(SFX_ARIGATO);
+const playHakushuSfx = () => playSfx(SFX_HAKUSHU);
+const playAppealTimeSfx = () => playSfx(SFX_APPEAL);
+
+// Special case for End/Result BGM
+const playEndSfx = () => {
+  stopAllBgm(); // Explicitly stop game BGM
+  currentBgm = SFX_END;
+  SFX_END.loop = false; // Ensure it doesn't loop if it's just a jingle
+  SFX_END.play().catch(e => console.warn("End SFX failed:", e));
+};
+
+
+/* --- I18n Setup --- */
 const { t, setLanguage, getLanguage, supportedLanguages } = createI18n();
 let langButtons = [];
 
-const hexToRgb = (hex) => {
-  if (!hex) return { r: 0, g: 0, b: 0 };
-  let sanitized = hex.replace("#", "");
-  if (sanitized.length === 3) {
-    sanitized = sanitized
-      .split("")
-      .map((ch) => ch + ch)
-      .join("");
-  }
-  const intVal = parseInt(sanitized, 16);
-  const r = (intVal >> 16) & 255;
-  const g = (intVal >> 8) & 255;
-  const b = intVal & 255;
-  return { r, g, b };
-};
 
-const escapeHtml = (value = "") =>
-  String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
-const normalizeHandle = (value = "") =>
-  String(value)
-    .replace(/\s+/g, "")
-    .replace(/^@+/, "")
-    .replace(/[^0-9A-Za-z_]/g, "");
-
-const hexToRgba = (hex, alpha = 1) => {
-  const { r, g, b } = hexToRgb(hex);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
-const applyPenlightAppearance = (element, colorCode) => {
-  if (!element) return;
-  const tube = element.querySelector(".penlight__tube");
-  if (!tube) return;
-  if (!colorCode) {
-    element.classList.add("penlight--off");
-    element.style.setProperty("--tube-color", "#dbe1f2");
-    tube.style.backgroundColor = "";
-    tube.style.boxShadow =
-      "inset 0 0 18px rgba(255,255,255,0.65), 0 12px 22px rgba(0,0,0,0.22)";
-    return;
-  }
-  element.classList.remove("penlight--off");
-  element.style.setProperty("--tube-color", colorCode);
-  tube.style.backgroundColor = colorCode;
-  tube.style.boxShadow = `0 18px 40px rgba(0,0,0,0.35), 0 0 32px ${hexToRgba(
-    colorCode,
-    0.55
-  )}`;
-};
-
-const randomBetween = (min, max) => Math.random() * (max - min) + min;
-
-const setFeverPenlightMotion = (direction = null) => {
-  if (!feverPenlight) return;
-  if (!direction) {
-    feverPenlight.style.setProperty("--fever-penlight-translate", "0px");
-    feverPenlight.style.setProperty("--fever-penlight-rotate", "0deg");
-    if (feverParticles) {
-      feverParticles.querySelectorAll(".fever__particle").forEach((node) => {
-        if (!node.dataset.persist) {
-          node.remove();
-        }
-      });
-    }
-    return;
-  }
-  const translate = direction === "left" ? "-16px" : "16px";
-  const rotate = direction === "left" ? "-12deg" : "12deg";
-  feverPenlight.style.setProperty("--fever-penlight-translate", translate);
-  feverPenlight.style.setProperty("--fever-penlight-rotate", rotate);
-  spawnFeverParticles(direction);
-};
-
-const spawnFeverParticles = (direction) => {
-  if (!feverParticles) return;
-  const count = Math.floor(randomBetween(4, 6));
-  const baseAngle = direction === "left" ? Math.PI - Math.PI / 8 : Math.PI / 8;
-  const spread = Math.PI / 5;
-  for (let i = 0; i < count; i += 1) {
-    const particle = document.createElement("span");
-    const variantRand = Math.random();
-    let variantClass = "fever__particle";
-    if (variantRand < 0.25) {
-      variantClass += " fever__particle--star";
-    } else if (variantRand < 0.65) {
-      variantClass += " fever__particle--spark";
-    }
-    particle.className = variantClass;
-    const angle = baseAngle + randomBetween(-spread, spread);
-    const distance = randomBetween(32, 56);
-    const tx = Math.cos(angle) * distance;
-    const ty = -Math.abs(Math.sin(angle) * distance * 0.75) - randomBetween(6, 18);
-    const duration = randomBetween(0.5, 0.7);
-    const scale = randomBetween(0.5, 0.9);
-    particle.style.setProperty("--particle-tx", `${tx.toFixed(2)}px`);
-    particle.style.setProperty("--particle-ty", `${ty.toFixed(2)}px`);
-    particle.style.setProperty("--particle-duration", `${duration.toFixed(2)}s`);
-    particle.style.setProperty("--particle-scale", scale.toFixed(2));
-    feverParticles.appendChild(particle);
-    particle.addEventListener(
-      "animationend",
-      () => {
-        particle.remove();
-      },
-      { once: true }
-    );
-  }
-};
-
-const getLuminance = (hex) => {
-  const { r, g, b } = hexToRgb(hex);
-  const srgb = [r, g, b].map((value) => {
-    const c = value / 255;
-    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
-};
-
-const getLevelInfoByScore = (score) =>
-  levelTable.find((entry) => score <= entry.max) || levelTable[levelTable.length - 1];
-
-const getLevelName = (levelInfo, lang = getLanguage()) => {
-  if (!levelInfo) return "";
-  if (levelInfo.names && levelInfo.names[lang]) return levelInfo.names[lang];
-  if (levelInfo.names && levelInfo.names.ja) return levelInfo.names.ja;
-  return levelInfo.name || "";
-};
-
-const getLevelNameByKey = (key, lang = getLanguage()) => {
-  const info = levelTable.find((entry) => entry.key === key);
-  return getLevelName(info, lang);
-};
-
+/* --- UI Elements --- */
 const screens = {
   top: document.getElementById("screen-top"),
-  play: document.getElementById("screen-play"),
+  game: document.getElementById("screen-game"),
   result: document.getElementById("screen-result"),
-  langSwitcher: document.getElementById("lang-switcher"),
-  hero: document.querySelector(".hero"),
-  transition: document.getElementById("transition-result"),
-  lockScroll() {
-    document.body.classList.add("scroll-lock");
-  },
-  unlockScroll() {
-    document.body.classList.remove("scroll-lock");
-  },
-  showTop() {
-    setHeroInteractive(false);
-    this.unlockScroll();
-    this.top.hidden = false;
-    this.play.hidden = true;
-    this.result.hidden = true;
-    if (this.langSwitcher) {
-      this.langSwitcher.hidden = false;
-    }
-    if (this.hero) {
-      this.hero.hidden = false;
-    }
-    this.hideTransition();
-    if (isBgmUnlocked()) {
-      playMenuBgm(); // メニュー画面表示時のBGM（ユーザー操作後のみ）
-    }
-    if (bgmToggleButton) {
-      bgmToggleButton.hidden = false;
-    }
-  },
-  showPlay() {
-    resetViewportScroll(this.play);
-    this.lockScroll();
-    this.top.hidden = true;
-    this.play.hidden = false;
-    this.result.hidden = true;
-    if (this.langSwitcher) {
-      this.langSwitcher.hidden = true;
-    }
-    if (this.hero) {
-      this.hero.hidden = true;
-    }
-    this.hideTransition();
-    if (isBgmUnlocked()) {
-      playGameBgm(); // プレイ画面表示時のBGM（ユーザー操作後のみ）
-    }
-    if (bgmToggleButton) {
-      bgmToggleButton.hidden = false;
-    }
-  },
-  showResult(state) {
-    setHeroInteractive(true);
-    this.unlockScroll();
-    this.top.hidden = true;
-    this.play.hidden = true;
-    this.result.hidden = false;
-    if (this.langSwitcher) {
-      this.langSwitcher.hidden = false;
-    }
-    if (this.hero) {
-      this.hero.hidden = false;
-    }
-    this.hideTransition();
-    populateResult(state);
-    if (isBgmUnlocked()) {
-      playMenuBgm(); // 結果画面表示時のBGM（メニューと同じ曲）
-    }
-    if (bgmToggleButton) {
-      bgmToggleButton.hidden = false;
-    }
-  },
-  showTransition() {
-    this.lockScroll();
-    this.top.hidden = true;
-    this.play.hidden = true;
-    this.result.hidden = true;
-    if (this.transition) {
-      this.transition.hidden = false;
-    }
-  },
-  hideTransition() {
-    if (this.transition) {
-      this.transition.hidden = true;
-    }
-  },
+  history: document.getElementById("screen-history"),
 };
 
-const game = new GameStore({
-  colors,
-  modeScore,
+const hud = {
+  score: document.getElementById("hud-score"),
+  success: document.getElementById("hud-success"),
+  timer: document.getElementById("hud-timer"),
+  targetText: document.getElementById("target-text"),
+  penlight: document.getElementById("penlight"),
+  penlightColor: document.querySelector(".penlight__color"),
+  messageArea: document.getElementById("message-area"),
+  feverOverlay: document.getElementById("fever-overlay"),
+  feverText: document.getElementById("fever-text"),
+};
+
+const buttons = {
+  start: document.getElementById("btn-start"),
+  howto: document.getElementById("btn-howto"),
+  ranking: document.getElementById("btn-ranking"),
+  rankingResult: document.getElementById("btn-ranking-result"),
+  left: document.getElementById("btn-left"),
+  right: document.getElementById("btn-right"),
+  showResult: document.getElementById("btn-show-result"),
+  pause: document.getElementById("btn-pause"),
+  resume: document.getElementById("btn-resume"),
+  retry: document.getElementById("btn-retry"),
+  top: document.getElementById("btn-top"),
+  share: document.getElementById("btn-share"),
+  closeRanking: document.getElementById("btn-close-ranking"),
+  submitRanking: document.getElementById("ranking-submit-button"),
+};
+
+const modals = {
+  howto: document.getElementById("modal-howto"),
+  pause: document.getElementById("modal-pause"),
+  ranking: document.getElementById("ranking-modal"),
+};
+
+const closeButtons = document.querySelectorAll(".modal-close");
+
+/* --- Ranking State --- */
+let latestResultState = null;
+let rankingEntriesCache = [];
+let personalEntriesCache = [];
+let latestPersonalEntry = null;
+let isRankingRefreshing = false;
+let rankingStatusState = "idle";
+
+/* --- Game Store Initialization --- */
+const store = new GameStore({
+  colors: PENLIGHT_COLORS,
+  modeScore: MODE_SCORE,
   t,
   effects: {
     onPause: () => {
-      pauseCurrentBgm();
+      playPauseSfx();
+      modals.pause.hidden = false;
     },
     onResume: () => {
-      if (isBgmUnlocked()) {
-        resumeCurrentBgm();
-      }
+      playPauseSfx();
+      modals.pause.hidden = true;
     },
     onHudFlash: () => {
-      flashHudValues(hudFlashTargets);
+      hud.score.classList.remove("hud__value--pop");
+      void hud.score.offsetWidth;
+      hud.score.classList.add("hud__value--pop");
     },
     onTargetFlash: () => {
-      flashTargetCard(targetColor);
+      hud.targetText.classList.remove("target-display__text--flash");
+      void hud.targetText.offsetWidth;
+      hud.targetText.classList.add("target-display__text--flash");
     },
     onMatchToast: ({ message, variant, options }) => {
+      playArrowSfx();
       showToast(message, variant, options);
     },
     onGlitchToast: ({ message, variant }) => {
       showToast(message, variant);
     },
     onFeverStart: ({ message }) => {
-      showToast(message, "success");
       playAppealTimeSfx();
+      showToast(message, "warning");
+      hud.feverOverlay.hidden = false;
+      hud.feverText.textContent = message;
     },
     onFeverLevelUp: ({ message, level }) => {
+      playMainSfx();
       showToast(message, "success");
-      playLvupSfx(level);
+      
+      // Image logic with safe bounds
+      const imageIndex = Math.min(level - 1, appealImageSources.length - 1);
+      // Use resolveAsset logic implicitly via appealImageSources
+      const nextSrc = appealImageSources[imageIndex];
+      
+      if (nextSrc) {
+        const img = document.createElement("img");
+        img.src = nextSrc;
+        img.className = "fever-reaction-image";
+        // Preload check not strictly necessary if cache is good, but safe to add
+        hud.feverOverlay.appendChild(img);
+        
+        // Remove after animation
+        setTimeout(() => img.remove(), 1000);
+      }
     },
-    onFeverEnd: ({ message }) => {
-      showToast(message, "success");
-    },
-    onFeverSwing: () => {
+    onFeverSwing: ({ roundTripCount }) => {
       playLightstickSfx();
     },
+    onFeverEnd: ({ message }) => {
+      showToast(message, "info");
+      hud.feverOverlay.hidden = true;
+      hud.feverText.textContent = "";
+    },
     onTransitionStart: () => {
-      screens.showTransition();
-    },
-    onTransitionComplete: (state) => {
-      screens.showResult(state);
+      playArigatoSfx();
       playHakushuSfx();
-      saveHistory(state);
+      // Stop game BGM here or in transition complete? 
+      // Let's stop main BGM now to let Arigato shine
+      stopAllBgm();
+    },
+    onTransitionComplete: (finalState) => {
+      latestResultState = finalState; // Save for ranking
+      playEndSfx(); // Play Result BGM
+      showResultScreen(finalState);
     },
   },
 });
 
-const hudScore = document.getElementById("hud-score");
-const hudSuccess = document.getElementById("hud-success");
-const hudTime = document.getElementById("hud-time");
-const hudTimerItem = document.getElementById("hud-timer-item");
-const targetColor = document.getElementById("target-color");
-const penlight = document.getElementById("penlight");
-const feverPenlight = document.getElementById("fever-penlight");
-const feverParticles = document.getElementById("fever-particles");
-const feverTimer = document.querySelector(".fever__timer");
-const penlightLabel = document.getElementById("penlight-label");
-const feverLayer = document.getElementById("fever");
-const feverTime = document.getElementById("fever-time");
-const feverCount = document.getElementById("fever-count");
-const feverStage = document.getElementById("fever-stage");
-const easyGuide = document.getElementById("easy-guide");
-const previewBar = document.getElementById("preview-bar");
-const historyList = document.getElementById("history-list");
-const resultCard = document.getElementById("result-card");
-const resultScore = document.getElementById("result-score");
-const resultLevel = document.getElementById("result-level");
-const resultSuccess = document.getElementById("result-success");
-const resultResponses = document.getElementById("result-responses");
-const pauseButton = document.getElementById("btn-pause");
-const stageToastLayer = document.getElementById("stage-toast-layer");
-const hero = document.querySelector(".hero");
-const heroTitle = document.querySelector(".hero__title");
-const heroSubtitle = document.querySelector(".hero__subtitle");
-const heroInteractiveElements = [heroTitle, heroSubtitle];
-const appealImageArea = document.getElementById("appeal-image-area");
-const appealImage = document.getElementById("appeal-image");
-const rankingModal = document.getElementById("ranking-modal");
-const rankingBackdrop = rankingModal
-  ? rankingModal.querySelector(".ranking-modal__backdrop")
-  : null;
-const rankingCloseButton = document.getElementById("btn-close-ranking");
-const rankingForm = document.getElementById("ranking-form");
-const rankingSubmitButton = document.getElementById("ranking-submit");
-const rankingStatus = document.getElementById("ranking-status");
-const rankingListElement = document.getElementById("ranking-list");
-const rankingUsernameInput = document.getElementById("ranking-username");
-const rankingHandleInput = document.getElementById("ranking-handle");
-const rankingCurrentScoreValue = document.getElementById("ranking-current-score");
-const rankingCurrentLevelValue = document.getElementById("ranking-current-level");
-const rankingNote = document.getElementById("ranking-note");
-const rankingPersonalContainer = document.getElementById("ranking-personal");
+store.subscribe(render);
 
-function resetViewportScroll(target) {
-  if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
-    try {
-      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    } catch (error) {
-      window.scrollTo(0, 0);
-    }
-  }
+/* --- Event Listeners --- */
 
-  if (!target) return;
-  try {
-    if (typeof target.scrollTo === "function") {
-      target.scrollTo({ top: 0, left: 0, behavior: "auto" });
-      return;
-    }
-  } catch (error) {
-    // ignore and fall through
-  }
-  target.scrollTop = 0;
-  target.scrollLeft = 0;
-}
-
-let lastSwingDirection = null;
-let previewItems = [];
-let lastCountdownTime = null;
-let lastFeverCountdownTime = null;
-let lastAppealLevel = null;
-let latestResultState = null;
-let rankingEntriesCache = [];
-let rankingStatusKey = "";
-let rankingStatusState = "idle";
-let isRankingRefreshing = false;
-let latestPersonalEntry = null;
-let personalEntriesCache = [];
-
-const renderCache = {
-  score: undefined,
-  success: undefined,
-  timeLeft: undefined,
-  countdownActive: undefined,
-  lowTimeActive: undefined,
-  pausedLabel: undefined,
-  pauseAria: undefined,
-  pauseDataState: undefined,
-  currentIndex: undefined,
-  penlightColor: undefined,
-  targetIndex: undefined,
-  targetColorCode: undefined,
-  targetName: undefined,
-  targetHidden: undefined,
-  mode: undefined,
-  feverActive: undefined,
-  feverTimeLeft: undefined,
-  feverLowTimeActive: undefined,
-  swingRoundTrips: undefined,
-  responseStage: undefined,
-  appealVisible: undefined,
-};
-
-let pendingRenderState = null;
-let pendingRenderForce = false;
-let renderFrameHandle = null;
-
-const rotationQueue = [];
-let rotationFrameHandle = null;
-const MAX_ROTATIONS_PER_FRAME = 24;
-
-const processRotationQueue = () => {
-  rotationFrameHandle = null;
-  if (!rotationQueue.length) return;
-  const rotationsThisFrame = rotationQueue.splice(0, MAX_ROTATIONS_PER_FRAME);
-  rotationsThisFrame.forEach((direction) => {
-    game.rotate(direction);
-  });
-  if (rotationQueue.length) {
-    rotationFrameHandle = requestAnimationFrame(processRotationQueue);
-  }
-};
-
-const queueRotation = (direction) => {
-  if (direction === 0) return;
-  if (rotationQueue.length < 120) {
-    rotationQueue.push(direction);
-  }
-  if (!rotationFrameHandle) {
-    rotationFrameHandle = requestAnimationFrame(processRotationQueue);
-  }
-};
-
-const resetRotationQueue = () => {
-  rotationQueue.splice(0, rotationQueue.length);
-  if (rotationFrameHandle) {
-    cancelAnimationFrame(rotationFrameHandle);
-    rotationFrameHandle = null;
-  }
-};
-
-const resetRenderCache = () => {
-  Object.keys(renderCache).forEach((key) => {
-    renderCache[key] = undefined;
-  });
-  lastCountdownTime = null;
-  lastFeverCountdownTime = null;
-  lastAppealLevel = null;
-};
-
-const enqueueRender = (state, { force = false } = {}) => {
-  pendingRenderState = state;
-  pendingRenderForce = pendingRenderForce || force;
-  if (!renderFrameHandle) {
-    renderFrameHandle = requestAnimationFrame(() => {
-      renderFrameHandle = null;
-      if (pendingRenderState) {
-        updateUI(pendingRenderState, { force: pendingRenderForce });
-      }
-      pendingRenderState = null;
-      pendingRenderForce = false;
-    });
-  }
-};
-
-const bgmToggleButton = document.getElementById("toggleBgmBtn");
-
-const isResultScreenActive = () => screens && screens.result && !screens.result.hidden;
-
-const handleHeroClick = () => {
-  if (!isResultScreenActive()) return;
+// Start
+buttons.start.addEventListener("click", () => {
+  unlockBgm();
   playButtonSfx();
-  screens.showTop();
-};
-
-const handleHeroKeydown = (event) => {
-  if (!isResultScreenActive()) return;
-  if (event.key === "Enter" || event.key === " ") {
-    event.preventDefault();
-    playButtonSfx();
-    screens.showTop();
-  }
-};
-
-heroInteractiveElements.forEach((element) => {
-  if (!element) return;
-  element.addEventListener("click", handleHeroClick);
-  element.addEventListener("keydown", handleHeroKeydown);
+  startGame("normal"); // Default to normal, or add mode selection later
 });
 
-function setHeroInteractive(enabled) {
-  if (!hero) return;
-  hero.classList.toggle("hero--interactive", enabled);
-  heroInteractiveElements.forEach((element) => {
-    if (!element) return;
-    if (enabled) {
-      element.setAttribute("role", "button");
-      element.setAttribute("tabindex", "0");
-    } else {
-      element.removeAttribute("role");
-      element.removeAttribute("tabindex");
-      if (document.activeElement === element) {
-        element.blur();
-      }
-    }
-  });
-}
-
-if (targetColor) {
-  targetColor.addEventListener(
-    "animationend",
-    (event) => {
-      if (event.animationName === "targetCardFlash") {
-        targetColor.classList.remove("color-card--flash");
-      }
-    },
-    { passive: true }
-  );
-}
-
-const hudFlashTargets = [
-  { element: hudScore, className: "hud__value--flash-score", animation: "hudValueFlashScore" },
-  {
-    element: hudSuccess,
-    className: "hud__value--flash-success",
-    animation: "hudValueFlashSuccess",
-  },
-];
-
-hudFlashTargets.forEach(({ element, className, animation }) => {
-  if (!element) return;
-  element.addEventListener(
-    "animationend",
-    (event) => {
-      if (event.animationName === animation) {
-        element.classList.remove(className);
-      }
-    },
-    { passive: true }
-  );
+// How to
+buttons.howto.addEventListener("click", () => {
+  playButtonSfx();
+  modals.howto.hidden = false;
 });
 
-function initUI() {
-  const reversedColors = [...colors].reverse();
-  previewBar.innerHTML = reversedColors
-    .map((color, idx) => {
-      const originalIndex = colors.length - 1 - idx;
-      return `<div class="preview-bar__item" data-color-index="${originalIndex}" data-name="${color.name}" style="--preview-color:${color.code}"></div>`;
-    })
-    .join("");
-  previewItems = Array.from(previewBar.querySelectorAll(".preview-bar__item"));
-  restoreHistory();
-}
+// Controls
+buttons.left.addEventListener("click", () => {
+  playArrowSfx();
+  store.rotate(-1);
+});
+buttons.right.addEventListener("click", () => {
+  playArrowSfx();
+  store.rotate(1);
+});
 
-function updateUI(state, { force = false } = {}) {
-  if (!state) return;
-  if (force) {
-    resetRenderCache();
+// Keyboard controls
+document.addEventListener("keydown", (e) => {
+  if (screens.game.hidden) return;
+  if (e.key === "ArrowLeft") {
+    store.rotate(-1);
+  } else if (e.key === "ArrowRight") {
+    store.rotate(1);
   }
+});
 
-  const { score, successCount, timeLeft, currentIndex, targetIndex, mode, fever } = state;
+// Pause/Resume/Retry
+buttons.pause.addEventListener("click", () => store.togglePause());
+buttons.resume.addEventListener("click", () => store.resume());
+buttons.showResult.addEventListener("click", () => {
+  store.finish(); // Force finish
+  modals.pause.hidden = true;
+});
+buttons.retry.addEventListener("click", () => {
+  playButtonSfx();
+  startGame(store.state.mode);
+});
+buttons.top.addEventListener("click", () => {
+  playButtonSfx();
+  showTopScreen();
+});
 
-  if (renderCache.score !== score && hudScore) {
-    hudScore.textContent = score.toString().padStart(4, "0");
-    renderCache.score = score;
-  }
+// Share
+buttons.share.addEventListener("click", () => {
+  playButtonSfx();
+  shareResult(store.state);
+});
 
-  if (renderCache.success !== successCount && hudSuccess) {
-    hudSuccess.textContent = successCount;
-    renderCache.success = successCount;
-  }
-
-  const timeChanged = renderCache.timeLeft !== timeLeft;
-  if (timeChanged && hudTime) {
-    hudTime.textContent = timeLeft;
-    if (
-      Number.isFinite(timeLeft) &&
-      timeLeft <= 10 &&
-      timeLeft >= 0 &&
-      lastCountdownTime !== timeLeft
-    ) {
-      playCountdownBeep(timeLeft);
-    }
-    lastCountdownTime = timeLeft;
-    renderCache.timeLeft = timeLeft;
-  }
-
-  const isCountdown = Number.isFinite(timeLeft) && timeLeft <= 10 && timeLeft >= 0;
-  if (renderCache.countdownActive !== isCountdown) {
-    if (hudTimerItem) {
-      hudTimerItem.classList.toggle("is-countdown", isCountdown);
-    }
-    if (hudTime) {
-      hudTime.classList.toggle("is-countdown", isCountdown);
-    }
-    renderCache.countdownActive = isCountdown;
-  }
-
-  const isLowTime = Number.isFinite(timeLeft) && timeLeft <= 3 && timeLeft >= 0;
-  if (renderCache.lowTimeActive !== isLowTime && hudTimerItem) {
-    hudTimerItem.classList.toggle("fever__timer--glow", isLowTime);
-    if (!isLowTime) {
-      hudTimerItem.style.removeProperty("--fever-glow-speed");
-    }
-    renderCache.lowTimeActive = isLowTime;
-  }
-  if (isLowTime && timeChanged && hudTimerItem) {
-    const glowSpeed = Math.max(0.4, Math.min(0.6, 0.4 + (timeLeft / 10) * 0.2));
-    hudTimerItem.style.setProperty("--fever-glow-speed", `${glowSpeed.toFixed(2)}s`);
-  }
-
-  if (pauseButton) {
-    const pauseText = t(state.paused ? "play.resume" : "play.pause");
-    if (renderCache.pausedLabel !== pauseText) {
-      pauseButton.textContent = pauseText;
-      renderCache.pausedLabel = pauseText;
-    }
-    const pauseAria = state.paused ? "true" : "false";
-    if (renderCache.pauseAria !== pauseAria) {
-      pauseButton.setAttribute("aria-pressed", pauseAria);
-      renderCache.pauseAria = pauseAria;
-    }
-    const pauseState = state.paused ? "resume" : "pause";
-    if (renderCache.pauseDataState !== pauseState) {
-      pauseButton.dataset.state = pauseState;
-      renderCache.pauseDataState = pauseState;
-    }
-  }
-
-  const isPenlightOff = currentIndex === null || currentIndex === undefined;
-  const currentColor = isPenlightOff ? null : colors[currentIndex];
-  const currentColorCode = currentColor ? currentColor.code : null;
-  if (
-    renderCache.currentIndex !== currentIndex ||
-    renderCache.penlightColor !== currentColorCode
-  ) {
-    const tube = penlight.querySelector(".penlight__tube");
-    if (isPenlightOff) {
-      penlight.classList.add("penlight--off");
-      penlight.style.setProperty("--tube-color", "#dbe1f2");
-      if (tube) {
-        tube.style.backgroundColor = "";
-        tube.style.boxShadow =
-          "inset 0 0 18px rgba(255,255,255,0.65), 0 12px 22px rgba(0,0,0,0.22)";
-      }
-      penlightLabel.textContent = t("penlight.off");
-      penlightLabel.style.color = "rgba(255,255,255,0.65)";
-      penlightLabel.style.textShadow = "none";
-      if (previewItems.length) {
-        previewItems.forEach((item) =>
-          item.classList.remove("preview-bar__item--active")
-        );
-      }
-    } else if (currentColor) {
-      penlight.classList.remove("penlight--off");
-      penlight.style.setProperty("--tube-color", currentColor.code);
-      if (tube) {
-        tube.style.backgroundColor = currentColor.code;
-        tube.style.boxShadow = `0 18px 40px rgba(0,0,0,0.35), 0 0 32px ${hexToRgba(
-          currentColor.code,
-          0.55
-        )}`;
-      }
-      penlightLabel.textContent = currentColor.name;
-      penlightLabel.style.color = "#ffffff";
-      penlightLabel.style.textShadow = "0 0 6px rgba(0,0,0,0.45)";
-      if (previewItems.length) {
-        previewItems.forEach((item) =>
-          item.classList.toggle(
-            "preview-bar__item--active",
-            Number(item.dataset.colorIndex) === currentIndex
-          )
-        );
-      }
-    }
-    applyPenlightAppearance(feverPenlight, currentColorCode);
-    renderCache.currentIndex = currentIndex;
-    renderCache.penlightColor = currentColorCode;
-  }
-
-  if (renderCache.mode !== mode) {
-    if (easyGuide) {
-      easyGuide.hidden = mode !== "easy";
-    }
-    renderCache.mode = mode;
-  }
-
-  const targetHidden = !!(fever && fever.active);
-  if (renderCache.targetHidden !== targetHidden && targetColor) {
-    targetColor.hidden = targetHidden;
-    renderCache.targetHidden = targetHidden;
-  }
-
-  if (!targetHidden && targetColor && colors[targetIndex]) {
-    const targetColorData = colors[targetIndex];
-    if (
-      renderCache.targetIndex !== targetIndex ||
-      renderCache.targetColorCode !== targetColorData.code ||
-      renderCache.targetName !== targetColorData.name
-    ) {
-      const swatch = targetColor.querySelector(".color-card__swatch");
-      const label = targetColor.querySelector(".color-card__name");
-      if (swatch) {
-        swatch.style.background = targetColorData.code;
-      }
-      if (label) {
-        label.textContent = targetColorData.name;
-      }
-      renderCache.targetIndex = targetIndex;
-      renderCache.targetColorCode = targetColorData.code;
-      renderCache.targetName = targetColorData.name;
-    }
-  }
-
-  const feverState = fever || {
-    active: false,
-    timeLeft: 10,
-    swingCount: 0,
-    responseStage: 0,
-  };
-  const feverActive = !!feverState.active;
-  if (renderCache.feverActive !== feverActive) {
-    if (feverLayer) {
-      feverLayer.hidden = !feverActive;
-    }
-    if (!feverActive) {
-      setFeverPenlightMotion(null);
-    }
-    renderCache.feverActive = feverActive;
-  }
-
-  const prevFeverTimeLeft = renderCache.feverTimeLeft;
-  const feverTimeLeft = feverActive ? feverState.timeLeft : null;
-  if (feverActive && feverTimeLeft != null && feverTime) {
-    if (prevFeverTimeLeft !== feverTimeLeft) {
-      feverTime.textContent = feverTimeLeft;
-      if (
-        Number.isFinite(feverTimeLeft) &&
-        feverTimeLeft <= 3 &&
-        feverTimeLeft >= 0 &&
-        lastFeverCountdownTime !== feverTimeLeft
-      ) {
-        playFeverCountdownChime(feverTimeLeft);
-      }
-      lastFeverCountdownTime = feverTimeLeft;
-    }
-  } else if (!feverActive) {
-    lastFeverCountdownTime = null;
-  }
-  renderCache.feverTimeLeft = feverActive ? feverTimeLeft : null;
-
-  const feverLowTime =
-    feverActive &&
-    Number.isFinite(feverTimeLeft) &&
-    feverTimeLeft <= 3 &&
-    feverTimeLeft >= 0;
-  if (renderCache.feverLowTimeActive !== feverLowTime && feverTimer) {
-    feverTimer.classList.toggle("fever__timer--glow", feverLowTime);
-    if (!feverLowTime) {
-      feverTimer.style.removeProperty("--fever-glow-speed");
-    }
-    renderCache.feverLowTimeActive = feverLowTime;
-  }
-  if (
-    feverLowTime &&
-    feverTimer &&
-    prevFeverTimeLeft !== feverTimeLeft &&
-    feverTimeLeft != null
-  ) {
-    const feverGlowSpeed = Math.max(
-      0.4,
-      Math.min(0.6, 0.4 + (feverTimeLeft / 10) * 0.2)
-    );
-    feverTimer.style.setProperty("--fever-glow-speed", `${feverGlowSpeed.toFixed(2)}s`);
-  }
-
-  const swingRoundTrips = Math.floor((feverState.swingCount || 0) / 2);
-  if (
-    renderCache.swingRoundTrips !== swingRoundTrips &&
-    feverCount
-  ) {
-    feverCount.textContent = `${swingRoundTrips} ${t("fever.countUnit")}`;
-    renderCache.swingRoundTrips = swingRoundTrips;
-  }
-
-  const stageLevel =
-    feverState && feverState.responseStage != null ? Math.max(0, feverState.responseStage) : 0;
-  if (renderCache.responseStage !== stageLevel && feverStage) {
-    feverStage.textContent = t("fever.stage", { level: stageLevel });
-    renderCache.responseStage = stageLevel;
-  }
-
-  if (appealImageArea && appealImage) {
-    const shouldShowAppeal = feverActive && stageLevel >= 1;
-    if (renderCache.appealVisible !== shouldShowAppeal || lastAppealLevel !== stageLevel) {
-      if (shouldShowAppeal) {
-        const imageIndex = Math.min(stageLevel - 1, appealImageSources.length - 1);
-        const nextSrc = appealImageSources[imageIndex];
-        if (appealImage.getAttribute("src") !== nextSrc) {
-          appealImage.setAttribute("src", nextSrc);
-        }
-        appealImage.alt = t("fever.stage", { level: stageLevel });
-        appealImageArea.hidden = false;
-      appealImageArea.classList.add("is-visible");
-      appealImageArea.classList.remove("is-flash");
-      requestAnimationFrame(() => {
-        appealImageArea.classList.add("is-flash");
-      });
-        const stars = appealImageArea.querySelector(".appeal-stars");
-        if (stageLevel >= 4) {
-          appealImageArea.classList.add("is-epic");
-          if (stars) {
-            stars.classList.remove("is-bursting");
-          requestAnimationFrame(() => {
-            stars.classList.add("is-bursting");
-          });
-          }
-        } else {
-          appealImageArea.classList.remove("is-epic");
-          if (stars) {
-            stars.classList.remove("is-bursting");
-          }
-        }
-        setTimeout(() => {
-          appealImageArea.classList.remove("is-flash");
-        }, 700);
-        lastAppealLevel = stageLevel;
-      } else {
-        appealImageArea.hidden = true;
-        appealImageArea.classList.remove("is-visible", "is-flash", "is-epic");
-        const stars = appealImageArea.querySelector(".appeal-stars");
-        if (stars) {
-          stars.classList.remove("is-bursting");
-        }
-        appealImage.removeAttribute("src");
-        appealImage.alt = "";
-        lastAppealLevel = null;
-      }
-      renderCache.appealVisible = shouldShowAppeal;
-    }
-  }
-}
-
-function populateResult(state) {
-  const levelNames = getLevelNamesForScore(state.score);
-  latestResultState = {
-    score: state.score,
-    responses: state.responses,
-    mode: state.mode,
-    otaLevel: levelNames,
-  };
-  updateRankingScoreState();
-  resultScore.textContent = state.score;
-  const levelInfo = getLevelInfoByScore(state.score);
-  const levelName = getLevelName(levelInfo);
-  resultLevel.textContent = levelName;
-  resultCard.classList.remove("level-1", "level-2", "level-3");
-  if (levelInfo && levelInfo.levelClass) {
-    resultCard.classList.add(levelInfo.levelClass);
-  }
-  resultSuccess.textContent = state.successCount;
-  resultResponses.textContent = state.responses;
-}
-
-function handleFeverSwing(e) {
-  if (!game.state.fever.active || game.state.paused) return;
-  if (e.type === "pointerdown") {
-    if (e.currentTarget.setPointerCapture) {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }
-    lastSwingDirection = null;
-    setFeverPenlightMotion(null);
-  } else if (e.type === "pointermove") {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const center = rect.left + rect.width / 2;
-    const direction = e.clientX < center ? "left" : "right";
-    if (lastSwingDirection !== direction) {
-      setFeverPenlightMotion(direction);
-      if (lastSwingDirection) {
-        game.swing(direction);
-      }
-    } else if (!lastSwingDirection) {
-      setFeverPenlightMotion(direction);
-    }
-    lastSwingDirection = direction;
-  } else if (e.type === "pointerup" || e.type === "pointercancel") {
-    lastSwingDirection = null;
-    setFeverPenlightMotion(null);
-  }
-}
-
-function showScreenPlay() {
+// Ranking
+buttons.ranking.addEventListener("click", () => {
+  playButtonSfx();
+  openRankingModal();
+});
+buttons.rankingResult.addEventListener("click", () => {
+  playButtonSfx();
+  openRankingModal();
+});
+buttons.closeRanking.addEventListener("click", () => {
+  playButtonSfx();
   closeRankingModal();
-  resumeAudioContext();
-  if (!isBgmUnlocked()) {
-    unlockBgm(); // 初回のユーザー操作でBGM再生を解禁
-  }
-  resetRenderCache();
-  resetRotationQueue();
-  if (hudTimerItem) {
-    hudTimerItem.classList.remove("is-countdown");
-  }
-  if (hudTime) {
-    hudTime.classList.remove("is-countdown");
-  }
-  lastCountdownTime = null;
-  screens.lockScroll();
-  screens.showPlay();
-  const selectedMode = document.querySelector('input[name="mode"]:checked').value;
-  game.start(selectedMode);
-}
+});
+buttons.submitRanking.addEventListener("click", (e) => {
+  e.preventDefault();
+  playButtonSfx();
+  handleRankingSubmit();
+});
 
-function endGame() {
-  game.finish();
-}
-
-function saveHistory(state) {
-  const levelInfo = getLevelInfoByScore(state.score);
-  const entry = {
-    score: state.score,
-    success: state.successCount,
-    responses: state.responses,
-    levelKey: levelInfo && levelInfo.key != null ? levelInfo.key : null,
-    date: new Date().toLocaleString(),
-  };
-  const history = JSON.parse(localStorage.getItem("oshiHistory") || "[]");
-  history.unshift(entry);
-  localStorage.setItem("oshiHistory", JSON.stringify(history.slice(0, 5)));
-  restoreHistory();
-}
-
-function restoreHistory() {
-  const history = JSON.parse(localStorage.getItem("oshiHistory") || "[]");
-  if (!history.length) {
-    historyList.innerHTML = `<li>${t("history.empty")}</li>`;
-    return;
-  }
-  const pointsUnit = t("history.pointsUnit");
-  historyList.innerHTML = history
-    .map((item) => {
-      const levelName =
-        item.levelKey !== undefined && item.levelKey !== null
-          ? getLevelNameByKey(item.levelKey)
-          : item.level || getLevelName(getLevelInfoByScore(item.score));
-      const dateLabel = item.date || "";
-      return `<li><strong>${item.score}</strong> ${pointsUnit} / ${levelName}<br><small>${dateLabel}</small></li>`;
-    })
-    .join("");
-}
-
-function getLevelNamesForScore(score) {
-  const levelInfo = getLevelInfoByScore(score);
-  return {
-    ja: getLevelName(levelInfo, "ja"),
-    en: getLevelName(levelInfo, "en"),
-    ko: getLevelName(levelInfo, "ko"),
-  };
-}
-
-function updateRankingScoreState() {
-  if (!rankingCurrentScoreValue || !rankingCurrentLevelValue || !rankingNote || !rankingSubmitButton) {
-    return;
-  }
-  const hasResult =
-    latestResultState &&
-    Number.isFinite(Number(latestResultState.score)) &&
-    typeof latestResultState.otaLevel === "object";
-  if (hasResult) {
-    rankingCurrentScoreValue.textContent = Number(latestResultState.score).toLocaleString();
-    const activeLang = getLanguage();
-    const levelLabel =
-      latestResultState.otaLevel?.[activeLang] ||
-      latestResultState.otaLevel?.ja ||
-      "-";
-    rankingCurrentLevelValue.textContent = levelLabel;
-    rankingNote.textContent = t("ranking.ready");
-  } else {
-    rankingCurrentScoreValue.textContent = "-";
-    rankingCurrentLevelValue.textContent = "-";
-    rankingNote.textContent = t("ranking.noScore");
-  }
-  rankingSubmitButton.disabled = !hasResult || !isRankingEnabled;
-}
-
-function applyRankingStatus() {
-  if (!rankingStatus) return;
-  rankingStatus.dataset.state = rankingStatusState;
-  if (!rankingStatusKey) {
-    rankingStatus.textContent = "";
-    rankingStatus.hidden = true;
-    return;
-  }
-  rankingStatus.hidden = false;
-  rankingStatus.textContent = t(rankingStatusKey);
-}
-
-function setRankingStatus({ key = "", state = "idle" } = {}) {
-  rankingStatusKey = key;
-  rankingStatusState = state;
-  applyRankingStatus();
-}
-
-function updateRankingFormPlaceholders() {
-  const lang = getLanguage();
-  if (rankingUsernameInput) {
-    const usernamePlaceholders = {
-      ja: "例：ペンライト太郎",
-      en: "e.g. John Doe",
-      ko: "예시: 홍길동",
-    };
-    rankingUsernameInput.placeholder =
-      usernamePlaceholders[lang] || usernamePlaceholders.en;
-  }
-  if (rankingHandleInput) {
-    const handlePlaceholders = {
-      ja: "例：oshi_light（@は自動で付きます）",
-      en: "e.g. oshi_light (@ is added automatically)",
-      ko: "예시: oshi_light（@는 자동으로 붙어요）",
-    };
-    rankingHandleInput.placeholder =
-      handlePlaceholders[lang] || handlePlaceholders.en;
-  }
-  const handleLabelSpan = document.querySelector('[data-i18n="ranking.form.handleLabel"]');
-  if (handleLabelSpan) {
-    if (!handleLabelSpan.dataset.defaultLabel) {
-      handleLabelSpan.dataset.defaultLabel = handleLabelSpan.textContent;
-    }
-    handleLabelSpan.textContent =
-      lang === "ja"
-        ? "Xアカウント"
-        : lang === "en"
-        ? "X Account"
-        : handleLabelSpan.dataset.defaultLabel;
-  }
-}
-
-const resolveLevelLabel = (entry, lang) =>
-  entry[`ota_level_${lang}`] || entry.ota_level_ja || entry.ota_level_en || entry.ota_level_ko || "-";
-
-function formatRankLabel(rank) {
-  if (!Number.isFinite(rank)) return "";
-  return t("ranking.list.position", { rank: rank.toLocaleString() });
-}
-
-function renderRankingList(entries = []) {
-  if (!rankingListElement) return;
-  if (!entries.length) {
-    rankingListElement.innerHTML = `<li class="ranking-list__empty">${t("ranking.list.empty")}</li>`;
-    return;
-  }
-  const pointsUnit = t("history.pointsUnit");
-  const activeLang = getLanguage();
-  rankingListElement.innerHTML = entries
-    .map((entry, index) => {
-      const rank = index + 1;
-      const username = entry.username ? escapeHtml(entry.username) : t("ranking.anonymous");
-      const handle = normalizeHandle(entry.handle || "");
-      const handleHtml = handle
-        ? `<a class="ranking-list__handle" href="https://x.com/${encodeURIComponent(
-            handle
-          )}" target="_blank" rel="noopener noreferrer">${escapeHtml(`@${handle}`)}</a>`
-        : `<span class="ranking-list__handle ranking-list__handle--empty">-</span>`;
-      const score = Number(entry.score);
-      const scoreText = Number.isFinite(score) ? score.toLocaleString() : "0";
-      const levelLabel = escapeHtml(resolveLevelLabel(entry, activeLang));
-      const rankLabel = formatRankLabel(rank);
-      const createdAt = entry.created_at ? new Date(entry.created_at).toLocaleString() : "";
-      return `
-        <li class="ranking-list__item" data-ranking-id="${entry.id || ""}">
-          <span class="ranking-list__rank">${rankLabel}</span>
-          <div class="ranking-list__info">
-            <span class="ranking-list__name">${username}</span>
-            ${handleHtml}
-            <div class="ranking-list__meta">${levelLabel}</div>
-            <div class="ranking-list__meta ranking-list__timestamp">${escapeHtml(createdAt)}</div>
-          </div>
-          <div class="ranking-list__score">
-            <span class="ranking-list__score-value">${scoreText}</span>
-            <span class="ranking-list__score-unit">${pointsUnit}</span>
-          </div>
-        </li>
-      `;
-    })
-    .join("");
-}
-
-function renderRankingPersonal(entry, { insideTop = false } = {}) {
-  if (!rankingPersonalContainer) return;
-  rankingPersonalContainer.innerHTML = "";
-  if (!entry) {
-    rankingPersonalContainer.innerHTML = `<p class="ranking-personal__empty">${t(
-      "ranking.personal.unavailable"
-    )}</p>`;
-    return;
-  }
-  const activeLang = getLanguage();
-  const rankValue = Number(entry.rank);
-  const hasRank = Number.isFinite(rankValue) && rankValue > 0;
-  const rankText = hasRank ? formatRankLabel(rankValue) : "-";
-  const extraMessage =
-    insideTop || !hasRank
-      ? ""
-      : `<p class="ranking-personal__empty">${t("ranking.personal.outside", {
-          rank: rankValue.toLocaleString(),
-        })}</p>`;
-  const scoreText = Number(entry.score).toLocaleString();
-  const levelLabel = escapeHtml(
-    entry[`ota_level_${activeLang}`] ||
-      entry.ota_level_ja ||
-      entry.ota_level_en ||
-      entry.ota_level_ko ||
-      "-"
-  );
-  const latestCard = document.createElement("div");
-  latestCard.className = "ranking-personal__card";
-  latestCard.innerHTML = `
-    <div>
-      <span class="ranking-personal__label">${t("ranking.personal.title")}</span>
-      <div class="ranking-personal__rank">${rankText}</div>
-    </div>
-    <div>
-      <span class="ranking-personal__label">${t("ranking.personal.latestScore")}</span>
-      <div class="ranking-personal__value">${scoreText}</div>
-    </div>
-    <div>
-      <span class="ranking-personal__label">${t("ranking.personal.latestLevel")}</span>
-      <div class="ranking-personal__value">${levelLabel}</div>
-    </div>
-    <button class="ranking-personal__delete-btn" type="button">
-      ${t("ranking.personal.deleteLatest")}
-    </button>
-  `;
-  const deleteButton = latestCard.querySelector(".ranking-personal__delete-btn");
-  deleteButton?.addEventListener("click", () => {
-    const confirmed = window.confirm(t("ranking.personal.deleteConfirm"));
-    if (!confirmed) return;
-    deleteRankingEntry(entry.id, { isLatest: true });
+// Close Modals
+closeButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    playButtonSfx();
+    const modal = btn.closest(".ranking-modal") || btn.closest(".modal");
+    if (modal) modal.hidden = true;
+    document.body.classList.remove("modal-open");
   });
-  rankingPersonalContainer.appendChild(latestCard);
-  rankingPersonalContainer.insertAdjacentHTML("beforeend", extraMessage);
+});
 
-  if (personalEntriesCache.length > 1) {
-    const historyTitle = document.createElement("h4");
-    historyTitle.className = "ranking-personal__history-title";
-    historyTitle.textContent = t("ranking.personal.allEntries");
-    rankingPersonalContainer.appendChild(historyTitle);
-    const historyList = document.createElement("ul");
-    historyList.className = "ranking-personal__history-list";
-    personalEntriesCache.forEach((item) => {
-      const li = document.createElement("li");
-      li.className = "ranking-personal__history-item";
-      const itemScore = Number(item.score).toLocaleString();
-      const itemLevel =
-        item[`ota_level_${activeLang}`] ||
-        item.ota_level_ja ||
-        item.ota_level_en ||
-        item.ota_level_ko ||
-        "-";
-      const itemCreatedAt = item.created_at
-        ? new Date(item.created_at).toLocaleString()
-        : "";
-      li.innerHTML = `
-        <div class="ranking-personal__history-main">
-          <strong>${itemScore}</strong> / ${escapeHtml(itemLevel)}
-          <small>${escapeHtml(itemCreatedAt)}</small>
-        </div>
-        <button class="ranking-personal__history-delete" type="button" data-entry-id="${item.id}">
-          ×
-        </button>
-      `;
-      historyList.appendChild(li);
-    });
-    rankingPersonalContainer.appendChild(historyList);
-  }
-
-  rankingPersonalContainer
-    .querySelectorAll(".ranking-personal__history-delete")
-    .forEach((btn) => {
-      btn.addEventListener("click", (event) => {
-        const entryId = event.currentTarget.dataset.entryId;
-        if (!entryId) return;
-        const confirmed = window.confirm(t("ranking.personal.deleteEntryConfirm"));
-        if (!confirmed) return;
-        deleteRankingEntry(entryId, { isLatest: entryId === entry.id });
-      });
-    });
-}
-
-async function calculateRankForEntry(entry) {
-  if (!supabase || !entry) return null;
-  const entryScore = Number(entry.score) || 0;
-  const entryCreatedAt = entry.created_at ? new Date(entry.created_at).toISOString() : null;
-  if (!entryCreatedAt) return null;
-  try {
-    const filter = [
-      `score.gt.${entryScore}`,
-      `and(score.eq.${entryScore},created_at.lt.${entryCreatedAt})`,
-    ].join(",");
-    const { count, error } = await supabase
-      .from(RANKING_TABLE)
-      .select("id", { head: true, count: "exact" })
-      .or(filter);
-    if (error) throw error;
-    const rank = Number(count || 0) + 1;
-    return rank;
-  } catch (error) {
-    console.error("Failed to calculate rank:", error);
-    return null;
-  }
-}
-
-async function fetchPersonalLatestEntry({ force = false } = {}) {
-  if (!supabase) {
-    personalEntriesCache = [];
-    latestPersonalEntry = null;
-    return null;
-  }
-  if (!force && latestPersonalEntry) {
-    return latestPersonalEntry;
-  }
-  try {
-    const { data, error } = await supabase
-      .from(RANKING_TABLE)
-      .select("*")
-      .eq("player_id", playerId)
-      .order("created_at", { ascending: false })
-      .limit(100);
-    if (error) throw error;
-    personalEntriesCache = Array.isArray(data) ? data : [];
-    latestPersonalEntry = personalEntriesCache.length ? personalEntriesCache[0] : null;
-    return latestPersonalEntry;
-  } catch (error) {
-    console.error("Failed to fetch personal entry:", error);
-    return latestPersonalEntry;
-  }
-}
-
-async function updatePersonalRanking() {
-  if (!supabase) {
-    personalEntriesCache = [];
-    latestPersonalEntry = null;
-    renderRankingPersonal(null);
-    return;
-  }
-  const entry = await fetchPersonalLatestEntry({ force: true });
-  if (!entry) {
-    renderRankingPersonal(null);
-    return;
-  }
-  const insideTop = rankingEntriesCache.some((topEntry) => topEntry.id === entry.id);
-  const rank = insideTop
-    ? rankingEntriesCache.findIndex((topEntry) => topEntry.id === entry.id) + 1
-    : await calculateRankForEntry(entry);
-  latestPersonalEntry =
-    entry && Number.isFinite(rank) ? { ...entry, rank } : { ...entry, rank: null };
-  renderRankingPersonal(latestPersonalEntry, { insideTop });
-}
-
-async function refreshRankingList({ force = false } = {}) {
-  if (!rankingListElement) return;
-  if (!supabase) {
-    rankingEntriesCache = [];
-    rankingListElement.innerHTML = `<li class="ranking-list__empty">${t("ranking.list.empty")}</li>`;
-    setRankingStatus({ key: "ranking.disabled", state: "disabled" });
-    personalEntriesCache = [];
-    latestPersonalEntry = null;
-    renderRankingPersonal(null);
-    return;
-  }
-  if (isRankingRefreshing && !force) {
-    return;
-  }
-  isRankingRefreshing = true;
-  setRankingStatus({ key: "ranking.loading", state: "loading" });
-  try {
-    const { data, error } = await supabase
-      .from(RANKING_TABLE)
-      .select("*")
-      .order("score", { ascending: false })
-      .order("created_at", { ascending: true })
-      .limit(500);
-    if (error) {
-      throw error;
+// Language Switcher
+const initLanguageButtons = () => {
+  const container = document.getElementById("lang-buttons");
+  if (!container) return;
+  container.innerHTML = "";
+  
+  supportedLanguages.forEach((lang) => {
+    const btn = document.createElement("button");
+    btn.className = "lang-button";
+    btn.textContent = lang.toUpperCase();
+    btn.dataset.lang = lang;
+    if (lang === getLanguage()) {
+      btn.classList.add("active");
     }
-    rankingEntriesCache = Array.isArray(data) ? data : [];
+    btn.addEventListener("click", () => {
+      playButtonSfx();
+      const newLang = setLanguage(lang);
+      updateLanguageUI(newLang);
+    });
+    container.appendChild(btn);
+  });
+};
+
+const updateLanguageUI = (lang) => {
+  // Update all data-i18n elements
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const key = el.dataset.i18n;
+    if (key) el.textContent = t(key);
+  });
+
+  // Update placeholders
+  const usernameInput = document.getElementById("ranking-username");
+  const handleInput = document.getElementById("ranking-handle");
+  if (usernameInput) usernameInput.placeholder = t("ranking.form.usernamePlaceholder");
+  if (handleInput) handleInput.placeholder = t("ranking.form.handlePlaceholder");
+
+  // Update active button state
+  document.querySelectorAll(".lang-button").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.lang === lang);
+  });
+
+  // Update ranking lists if open (to translate levels/dates)
+  if (!modals.ranking.hidden) {
     renderRankingList(rankingEntriesCache);
-    setRankingStatus({ key: "", state: "idle" });
-    await updatePersonalRanking();
-  } catch (error) {
-    console.error("Failed to fetch ranking:", error);
-    if (!rankingEntriesCache.length) {
-      rankingListElement.innerHTML = `<li class="ranking-list__empty">${t(
-        "ranking.list.empty"
-      )}</li>`;
-    }
-    setRankingStatus({ key: "ranking.form.error", state: "error" });
-  } finally {
-    isRankingRefreshing = false;
+    renderRankingPersonal(personalEntriesCache);
+  }
+};
+
+/* --- Swipe Logic (Fever) --- */
+let touchStartX = 0;
+let touchStartY = 0;
+
+document.addEventListener("touchstart", (e) => {
+  touchStartX = e.changedTouches[0].screenX;
+  touchStartY = e.changedTouches[0].screenY;
+}, { passive: false });
+
+document.addEventListener("touchmove", (e) => {
+  if (store.state.fever.active) {
+    e.preventDefault(); // Prevent scrolling during fever
+  }
+}, { passive: false });
+
+document.addEventListener("touchend", (e) => {
+  if (!store.state.fever.active) return;
+  const touchEndX = e.changedTouches[0].screenX;
+  const touchEndY = e.changedTouches[0].screenY;
+  
+  const diffX = touchEndX - touchStartX;
+  const diffY = touchEndY - touchStartY;
+
+  // Simple horizontal swipe detection
+  if (Math.abs(diffX) > 30 && Math.abs(diffX) > Math.abs(diffY)) {
+    store.swing(diffX > 0 ? 1 : -1);
+  }
+});
+
+
+/* --- Render Functions --- */
+
+function render(state) {
+  // Sync HUD
+  hud.score.textContent = state.score;
+  hud.success.textContent = state.successCount;
+  hud.timer.textContent = state.timeLeft;
+
+  // Update Target Color
+  const targetColor = store.colors[state.targetIndex];
+  if (targetColor) {
+    hud.targetText.textContent = targetColor.name;
+    hud.targetText.style.color = targetColor.code;
+    // Optional: add text shadow for readability
+    hud.targetText.style.textShadow = `0 0 10px ${targetColor.code}`;
+  }
+
+  // Update Penlight
+  if (state.currentIndex !== null) {
+    const currentColor = store.colors[state.currentIndex];
+    hud.penlightColor.style.backgroundColor = currentColor.code;
+    hud.penlightColor.style.boxShadow = `0 0 20px ${currentColor.code}, 0 0 40px ${currentColor.code}`;
+  } else {
+    hud.penlightColor.style.backgroundColor = "#333";
+    hud.penlightColor.style.boxShadow = "none";
+  }
+
+  // Fever Overlay
+  if (state.fever.active) {
+    hud.feverOverlay.hidden = false;
+    hud.feverText.innerHTML = `${t("fever.title")}<br>${state.fever.timeLeft} ${t("fever.timerUnit")}`;
+  } else {
+    hud.feverOverlay.hidden = true;
   }
 }
 
-const isRankingModalVisible = () => rankingModal && !rankingModal.hidden;
+function showToast(message, variant = "info", options = {}) {
+  const toast = document.createElement("div");
+  toast.className = `toast toast--${variant}`;
+  toast.textContent = message;
+  
+  if (options.placement === "stage") {
+    toast.style.top = "40%";
+    toast.style.left = "50%";
+    toast.style.transform = "translate(-50%, -50%)";
+  }
 
-function closeRankingModal() {
-  if (!rankingModal || rankingModal.hidden) return;
-  rankingModal.hidden = true;
+  hud.messageArea.appendChild(toast);
+  
+  // Trigger reflow for animation
+  void toast.offsetWidth;
+  toast.classList.add("toast--show");
+
+  setTimeout(() => {
+    toast.classList.remove("toast--show");
+    setTimeout(() => toast.remove(), 300);
+  }, 2000);
+}
+
+/* --- Screen Navigation --- */
+
+function showTopScreen() {
+  stopAllBgm();
+  playBgm(BGM_MENU);
+  
+  screens.top.hidden = false;
+  screens.game.hidden = true;
+  screens.result.hidden = true;
+  screens.history.hidden = true;
+  
   document.body.classList.remove("modal-open");
 }
 
-function openRankingModal({ focusForm = false } = {}) {
-  if (!rankingModal) return;
-  if (!rankingModal.hidden) {
-    updateRankingScoreState();
-    applyRankingStatus();
-    renderRankingList(rankingEntriesCache);
-    renderRankingPersonal(latestPersonalEntry, {
-      insideTop:
-        latestPersonalEntry &&
-        rankingEntriesCache.some((entry) => entry.id === latestPersonalEntry.id),
-    });
-    if (isRankingEnabled) {
-      refreshRankingList({ force: true });
-    }
-    return;
-  }
-  rankingModal.hidden = false;
-  document.body.classList.add("modal-open");
-  updateRankingScoreState();
-  renderRankingList(rankingEntriesCache);
-  applyRankingStatus();
-  renderRankingPersonal(latestPersonalEntry, {
-    insideTop:
-      latestPersonalEntry &&
-      rankingEntriesCache.some((entry) => entry.id === latestPersonalEntry.id),
-  });
-  if (focusForm && rankingUsernameInput) {
-    requestAnimationFrame(() => {
-      rankingUsernameInput.focus();
-    });
-  }
-  refreshRankingList({ force: true });
+function startGame(mode) {
+  stopAllBgm();
+  playBgm(BGM_GAME);
+
+  screens.top.hidden = true;
+  screens.game.hidden = false;
+  screens.result.hidden = true;
+  
+  store.start(mode);
 }
 
-async function handleRankingSubmit(event) {
-  event.preventDefault();
-  if (!rankingForm || !rankingSubmitButton) return;
-  if (!isRankingEnabled) {
-    showToast(t("ranking.disabled"), "danger");
+function showResultScreen(state) {
+  screens.game.hidden = true;
+  screens.result.hidden = false;
+
+  const levelData = getLevelData(state.score);
+  
+  document.getElementById("result-score").textContent = state.score;
+  document.getElementById("result-level").textContent = levelData.names[getLanguage()] || levelData.name;
+  document.getElementById("result-success").textContent = state.successCount;
+  document.getElementById("result-responses").textContent = state.responses;
+  
+  // Update ranking form current score display if available
+  const currentScoreDisplay = document.getElementById("ranking-current-score");
+  const currentLevelDisplay = document.getElementById("ranking-current-level");
+  if (currentScoreDisplay) currentScoreDisplay.textContent = state.score;
+  if (currentLevelDisplay) currentLevelDisplay.textContent = levelData.names[getLanguage()];
+}
+
+function getLevelData(score) {
+  return LEVEL_TABLE.find((l) => score <= l.max) || LEVEL_TABLE[LEVEL_TABLE.length - 1];
+}
+
+function shareResult(state) {
+  const levelData = getLevelData(state.score);
+  const text = t("share.template", {
+    levelName: levelData.names[getLanguage()],
+    score: state.score,
+    responses: state.responses,
+  });
+  const url = "https://twitter.com/intent/tweet?text=" + encodeURIComponent(text);
+  window.open(url, "_blank");
+}
+
+
+/* --- Ranking Logic --- */
+
+async function fetchRankingList() {
+  if (!supabase) return;
+  const listEl = document.getElementById("ranking-list");
+  listEl.innerHTML = `<li class="ranking-list__loading">${t("ranking.loading")}</li>`;
+
+  const { data, error } = await supabase
+    .from(RANKING_TABLE)
+    .select("*")
+    .order("score", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(500);
+
+  if (error) {
+    console.error("Ranking fetch error:", error);
+    listEl.textContent = t("ranking.disabled");
     return;
   }
-  const hasResult =
-    latestResultState &&
-    Number.isFinite(Number(latestResultState.score)) &&
-    typeof latestResultState.otaLevel === "object";
-  if (!hasResult) {
-    showToast(t("ranking.form.validationMissingScore"), "danger");
+
+  rankingEntriesCache = data || [];
+  renderRankingList(rankingEntriesCache);
+}
+
+async function fetchPersonalHistory() {
+  if (!supabase || !playerId) return;
+  const personalEl = document.getElementById("ranking-personal");
+  personalEl.innerHTML = `<p class="ranking-loading">${t("ranking.loading")}</p>`;
+
+  const { data, error } = await supabase
+    .from(RANKING_TABLE)
+    .select("*")
+    .eq("player_id", playerId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Personal history fetch error:", error);
     return;
   }
-  const usernameRaw = rankingUsernameInput ? rankingUsernameInput.value.trim() : "";
-  const handleRaw = rankingHandleInput ? rankingHandleInput.value.trim() : "";
-  const hasHandle = !!handleRaw;
+
+  personalEntriesCache = data || [];
+  if (personalEntriesCache.length > 0) {
+    latestPersonalEntry = personalEntriesCache[0];
+  } else {
+    latestPersonalEntry = null;
+  }
+  renderRankingPersonal(personalEntriesCache);
+}
+
+function renderRankingList(entries) {
+  const listEl = document.getElementById("ranking-list");
+  listEl.innerHTML = "";
+
+  if (entries.length === 0) {
+    listEl.innerHTML = `<li class="ranking-list__empty">${t("ranking.list.empty")}</li>`;
+    return;
+  }
+
+  entries.forEach((entry, index) => {
+    const rank = index + 1;
+    const li = document.createElement("li");
+    li.className = `ranking-list__item rank-${rank}`;
+    
+    const date = new Date(entry.created_at).toLocaleDateString();
+    const levelKey = getLanguage() === "ja" ? "ota_level_ja" : getLanguage() === "en" ? "ota_level_en" : "ota_level_ko";
+    const levelName = entry[levelKey] || entry.ota_level_ja || "-";
+    
+    let handleHtml = "";
+    if (entry.handle) {
+        const handleLink = `https://x.com/${entry.handle}`;
+        handleHtml = `<a class="ranking-list__handle" href="${handleLink}" target="_blank" rel="noopener noreferrer">@${entry.handle}</a>`;
+    }
+
+    li.innerHTML = `
+      <div class="ranking-list__rank">${rank}</div>
+      <div class="ranking-list__info">
+        <div class="ranking-list__main">
+            <span class="ranking-list__name">${entry.username || t("ranking.anonymous")}</span>
+            ${handleHtml}
+        </div>
+        <div class="ranking-list__sub">
+            <span class="ranking-list__level">${levelName}</span>
+            <span class="ranking-list__date">${date}</span>
+        </div>
+      </div>
+      <div class="ranking-list__score">${entry.score}</div>
+    `;
+    listEl.appendChild(li);
+  });
+}
+
+function renderRankingPersonal(entries) {
+  const container = document.getElementById("ranking-personal");
+  container.innerHTML = "";
+
+  if (!entries || entries.length === 0) {
+    container.innerHTML = `<p class="ranking-personal__empty">${t("ranking.personal.unavailable")}</p>`;
+    return;
+  }
+
+  // Title for history
+  const title = document.createElement("h4");
+  title.className = "ranking-personal__history-title";
+  title.textContent = t("ranking.personal.allEntries");
+  container.appendChild(title);
+
+  const list = document.createElement("ul");
+  list.className = "ranking-personal__list";
+
+  entries.forEach((entry) => {
+    const li = document.createElement("li");
+    li.className = "ranking-personal__item";
+
+    const date = new Date(entry.created_at).toLocaleString();
+    const levelKey = getLanguage() === "ja" ? "ota_level_ja" : getLanguage() === "en" ? "ota_level_en" : "ota_level_ko";
+    const levelName = entry[levelKey] || entry.ota_level_ja || "-";
+
+    li.innerHTML = `
+      <div class="ranking-personal__info">
+        <div class="ranking-personal__score">${t("ranking.personal.latestScore")}: ${entry.score}</div>
+        <div class="ranking-personal__meta">
+            <span>${levelName}</span>
+            <span class="ranking-personal__date">${date}</span>
+        </div>
+      </div>
+      <button class="ranking-personal__delete-btn" data-id="${entry.id}" title="${t("ranking.personal.deleteLatest")}">
+        🗑️
+      </button>
+    `;
+
+    // Attach delete handler
+    const deleteBtn = li.querySelector(".ranking-personal__delete-btn");
+    deleteBtn.addEventListener("click", async () => {
+        if (confirm(t("ranking.personal.deleteEntryConfirm"))) {
+            await deleteRankingEntry(entry.id);
+        }
+    });
+
+    list.appendChild(li);
+  });
+
+  container.appendChild(list);
+}
+
+async function handleRankingSubmit() {
+  if (!store.state.score && !latestResultState) {
+    showToast(t("ranking.form.validationMissingScore"), "warning");
+    return;
+  }
+
+  const usernameInput = document.getElementById("ranking-username");
+  const handleInput = document.getElementById("ranking-handle");
+  const usernameRaw = usernameInput.value.trim();
+  const handleRaw = handleInput.value.trim();
+
   if (!usernameRaw) {
-    rankingUsernameInput?.focus();
+    usernameInput.focus();
+    return; // Native required validation handles visual cue
+  }
+
+  // Basic handle validation (alphanumeric + underscore only)
+  let normalizedHandle = handleRaw.replace(/^@/, "");
+  if (normalizedHandle && !/^[a-zA-Z0-9_]+$/.test(normalizedHandle)) {
+    showToast(t("ranking.form.validationHandle"), "danger");
     return;
   }
-  let normalizedHandle = "";
-  if (hasHandle) {
-    const trimmedHandle = handleRaw.replace(/\s+/g, "").replace(/^@+/, "");
-    normalizedHandle = normalizeHandle(handleRaw);
-    if (!normalizedHandle || normalizedHandle !== trimmedHandle) {
-      if (rankingHandleInput) {
-        rankingHandleInput.setCustomValidity(t("ranking.form.validationHandle"));
-        rankingHandleInput.reportValidity();
-        rankingHandleInput.focus();
-      }
-      return;
-    }
-    if (rankingHandleInput) {
-      rankingHandleInput.setCustomValidity("");
-      rankingHandleInput.value = `@${normalizedHandle}`;
-    }
-  } else if (rankingHandleInput) {
-    rankingHandleInput.setCustomValidity("");
-    rankingHandleInput.value = "";
-  }
-  const defaultSubmitLabel = t("ranking.form.submit");
-  rankingSubmitButton.disabled = true;
-  rankingSubmitButton.textContent = t("ranking.submit.inProgress");
+
+  const scoreToSubmit = latestResultState ? latestResultState.score : store.state.score;
+  const levelData = getLevelData(scoreToSubmit);
+
+  const payload = {
+    player_id: playerId,
+    username: usernameRaw.slice(0, 32),
+    handle: normalizedHandle || null,
+    score: Number(scoreToSubmit) || 0,
+    ota_level_ja: levelData.names.ja,
+    ota_level_en: levelData.names.en,
+    ota_level_ko: levelData.names.ko,
+    language: getLanguage(),
+  };
+
+  const submitBtn = document.getElementById("ranking-submit-button");
+  const originalText = submitBtn.textContent;
+  submitBtn.textContent = t("ranking.submit.inProgress");
+  submitBtn.disabled = true;
+
   try {
-    const payload = {
-      player_id: playerId,
-      username: usernameRaw.slice(0, 32),
-      handle: normalizedHandle || null,
-      score: Number(latestResultState.score) || 0,
-      ota_level_ja: latestResultState.otaLevel?.ja || "",
-      ota_level_en: latestResultState.otaLevel?.en || "",
-      ota_level_ko: latestResultState.otaLevel?.ko || "",
-      language: getLanguage(),
-    };
     const { data, error } = await supabase
       .from(RANKING_TABLE)
       .insert(payload)
       .select("*")
       .maybeSingle();
-    if (error) {
-      throw error;
-    }
-    if (data) {
-      latestPersonalEntry = { ...data };
-    }
+
+    if (error) throw error;
+
     showToast(t("ranking.form.success"), "success");
-    await refreshRankingList({ force: true });
+    // Clear inputs
+    usernameInput.value = "";
+    handleInput.value = "";
+    
+    // Refresh lists
+    await fetchRankingList();
+    await fetchPersonalHistory();
+
   } catch (error) {
-    console.error("Failed to submit ranking:", error);
+    console.error("Submission error:", error);
     showToast(t("ranking.form.error"), "danger");
   } finally {
-    rankingSubmitButton.textContent = defaultSubmitLabel;
-    updateRankingScoreState();
+    submitBtn.textContent = originalText;
+    submitBtn.disabled = false;
   }
 }
 
-async function deleteRankingEntry(entryId, { isLatest = false } = {}) {
+async function deleteRankingEntry(entryId) {
   if (!supabase || !entryId) return;
   try {
     const { error } = await supabase
       .from(RANKING_TABLE)
       .delete()
       .eq("id", entryId)
-      .eq("player_id", playerId);
-    if (error) {
-      throw error;
-    }
+      .eq("player_id", playerId); // RLS security
+
+    if (error) throw error;
+
     showToast(t("ranking.personal.deleteSuccess"), "success");
-    personalEntriesCache = personalEntriesCache.filter((entry) => entry.id !== entryId);
-    if (latestPersonalEntry && latestPersonalEntry.id === entryId) {
-      latestPersonalEntry = null;
-    }
-    await refreshRankingList({ force: true });
+    await fetchPersonalHistory();
+    await fetchRankingList(); // Also refresh global list
   } catch (error) {
     console.error("Failed to delete ranking entry:", error);
     showToast(t("ranking.personal.deleteError"), "danger");
   }
 }
 
-function handleRankingKeydown(event) {
-  if (event.key === "Escape" && isRankingModalVisible()) {
-    event.preventDefault();
-    closeRankingModal();
+function openRankingModal() {
+  document.body.classList.add("modal-open");
+  modals.ranking.hidden = false;
+  
+  // Populate current score in form
+  const scoreVal = document.getElementById("ranking-current-score");
+  const levelVal = document.getElementById("ranking-current-level");
+  
+  if (latestResultState) {
+    const ld = getLevelData(latestResultState.score);
+    scoreVal.textContent = latestResultState.score;
+    levelVal.textContent = ld.names[getLanguage()];
+  } else {
+    scoreVal.textContent = "-";
+    levelVal.textContent = "-";
   }
+
+  fetchRankingList();
+  fetchPersonalHistory();
 }
 
-function updateLangButtons() {
-  if (!langButtons || !langButtons.length) return;
-  const activeLang = getLanguage();
-  langButtons.forEach((btn) => {
-    const isActive = btn.dataset.lang === activeLang;
-    btn.classList.toggle("lang-switcher__btn--active", isActive);
-    btn.setAttribute("aria-pressed", isActive ? "true" : "false");
-    const flag =
-      btn.dataset.lang === "ja"
-        ? "🇯🇵"
-        : btn.dataset.lang === "en"
-        ? "🇺🇸"
-        : btn.dataset.lang === "ko"
-        ? "🇰🇷"
-        : btn.textContent;
-    btn.textContent = flag;
-  });
+function closeRankingModal() {
+  document.body.classList.remove("modal-open");
+  modals.ranking.hidden = true;
 }
 
-function applyTranslations() {
-  document.querySelectorAll("[data-i18n]").forEach((node) => {
-    const key = node.dataset.i18n;
-    if (!key) return;
-    if (
-      key === "penlight.off" &&
-      game &&
-      game.state &&
-      game.state.currentIndex !== null
-    ) {
-      return;
-    }
-    const translation = t(key);
-    if (translation !== undefined) {
-      node.textContent = translation;
-    }
-  });
-}
 
-function changeLanguage(lang) {
-  const nextLang = supportedLanguages.includes(lang) ? lang : "ja";
-  setLanguage(nextLang);
-  applyTranslations();
-  updateLangButtons();
-  updateRankingFormPlaceholders();
-  restoreHistory();
-  renderRankingList(rankingEntriesCache);
-  renderRankingPersonal(latestPersonalEntry, {
-    insideTop:
-      latestPersonalEntry &&
-      rankingEntriesCache.some((entry) => entry.id === latestPersonalEntry.id),
-  });
-  updateRankingScoreState();
-  applyRankingStatus();
-  if (game && game.state) {
-    enqueueRender(game.state, { force: true });
+/* --- Initialization --- */
+window.addEventListener("DOMContentLoaded", () => {
+  initLanguageButtons();
+  updateLanguageUI(getLanguage());
+  
+  // Pre-resolve audio paths but wait for user interaction to play
+  initAudio();
+  
+  // Setup initial visibility
+  screens.top.hidden = false;
+  screens.game.hidden = true;
+  screens.result.hidden = true;
+  screens.history.hidden = true;
+  
+  // Handle GitHub Pages reload 404s or history api (not strictly needed here for hash routing, but good practice)
+  if (!isRankingEnabled) {
+    console.warn("Supabase not configured. Ranking features disabled.");
+    const rankingBtns = document.querySelectorAll("#btn-ranking, #btn-ranking-result");
+    rankingBtns.forEach(b => b.style.display = "none");
   }
-}
-
-function shareOnX() {
-  const score = game.state.score;
-  const responses = game.state.responses;
-  const levelName = getLevelName(getLevelInfoByScore(score));
-  const text = encodeURIComponent(t("share.template", { levelName, score, responses }));
-  const url = encodeURIComponent(window.location.href);
-  window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, "_blank");
-}
-
-let stageToastElement = null;
-let stageToastHideTimeout = null;
-
-function showToast(message, variant = "success", options = {}) {
-  const { placement = "global", duration = 1800 } = options;
-
-  if (placement === "stage" && stageToastLayer) {
-    if (!stageToastElement) {
-      stageToastElement = document.createElement("div");
-      stageToastLayer.appendChild(stageToastElement);
-    }
-    const classes = ["toast", `toast--${variant}`, "toast--stage"];
-    if (variant === "success") {
-      const isPink =
-        message === t("toast.feverStart") || message === t("toast.feverEnd");
-      classes.push(isPink ? "toast--stage-success-pink" : "toast--stage-success");
-    }
-    stageToastElement.className = classes.join(" ");
-    stageToastElement.textContent = message;
-    stageToastElement.classList.remove("is-visible");
-    void stageToastElement.offsetWidth;
-    stageToastElement.classList.add("is-visible");
-    if (stageToastHideTimeout) {
-      clearTimeout(stageToastHideTimeout);
-    }
-    stageToastHideTimeout = setTimeout(() => {
-      if (stageToastElement) {
-        stageToastElement.classList.remove("is-visible");
-      }
-    }, duration);
-    return;
-  }
-
-  const container = document.body;
-  const toast = document.createElement("div");
-  toast.className = `toast toast--${variant}`;
-  toast.textContent = message;
-  container.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("is-visible"));
-  setTimeout(() => {
-    toast.classList.remove("is-visible");
-    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
-  }, duration);
-}
-
-function attachEventListeners() {
-  const btnStart = document.getElementById("btn-start");
-  if (btnStart) {
-    btnStart.addEventListener("click", () => {
-      playStartSfx();
-      showScreenPlay();
-    });
-  }
-  const btnEnd = document.getElementById("btn-end");
-  if (btnEnd) {
-    btnEnd.addEventListener("click", () => {
-      playEndSfx();
-      endGame();
-    });
-  }
-  const btnRetry = document.getElementById("btn-retry");
-  if (btnRetry) {
-    btnRetry.addEventListener("click", () => {
-      playStartSfx();
-      showScreenPlay();
-    });
-  }
-  const btnTop = document.getElementById("btn-top");
-  if (btnTop) {
-    btnTop.addEventListener("click", () => {
-      playMainSfx();
-      screens.showTop();
-    });
-  }
-  const btnShare = document.getElementById("btn-share");
-  if (btnShare) {
-    btnShare.addEventListener("click", () => {
-      playArigatoSfx();
-      shareOnX();
-    });
-  }
-  const btnRanking = document.getElementById("btn-ranking");
-  if (btnRanking) {
-    btnRanking.addEventListener("click", () => {
-      playMainSfx();
-      openRankingModal({ focusForm: !!latestResultState });
-    });
-  }
-  const btnRankingResult = document.getElementById("btn-ranking-result");
-  if (btnRankingResult) {
-    btnRankingResult.addEventListener("click", () => {
-      playMainSfx();
-      screens.showTop();
-      openRankingModal({ focusForm: !!latestResultState });
-    });
-  }
-  const modeRadios = document.querySelectorAll('input[name="mode"]');
-  modeRadios.forEach((radio) => {
-    radio.addEventListener("change", () => {
-      playMainSfx();
-    });
-  });
-  bindTapSafeActivation(
-    document.getElementById("btn-left"),
-    () => {
-      playArrowSfx();
-      queueRotation(-1);
-    },
-    { resumeAudio: resumeAudioContext }
-  );
-  bindTapSafeActivation(
-    document.getElementById("btn-right"),
-    () => {
-      playArrowSfx();
-      queueRotation(1);
-    },
-    { resumeAudio: resumeAudioContext }
-  );
-  if (pauseButton) {
-    bindTapSafeActivation(
-      pauseButton,
-      () => {
-      playPauseSfx();
-      game.togglePause();
-      },
-      { resumeAudio: resumeAudioContext }
-    );
-  }
-
-  document.addEventListener("keydown", (e) => {
-    if (screens.play.hidden) return;
-    if (e.key === "Escape") {
-      game.togglePause();
-      return;
-    }
-    if (game.state.paused) return;
-    if (e.key === "ArrowLeft") queueRotation(-1);
-    if (e.key === "ArrowRight") queueRotation(1);
-  });
-
-  const feverZone = document.getElementById("fever-zone");
-  ["pointerdown", "pointermove", "pointerup", "pointercancel"].forEach((type) => {
-    feverZone.addEventListener(type, handleFeverSwing);
-  });
-
-  const howtoModal = document.getElementById("howto-modal");
-  const btnHowto = document.getElementById("btn-howto");
-  if (btnHowto) {
-    btnHowto.addEventListener("click", () => {
-      playMainSfx();
-      howtoModal.hidden = false;
-    });
-  }
-  const btnCloseHowto = document.getElementById("btn-close-howto");
-  if (btnCloseHowto) {
-    btnCloseHowto.addEventListener("click", () => {
-      playMainSfx();
-      howtoModal.hidden = true;
-    });
-  }
-  howtoModal.addEventListener("click", (e) => {
-    if (e.target === howtoModal || e.target.classList.contains("howto-modal__backdrop")) {
-      playMainSfx();
-      howtoModal.hidden = true;
-    }
-  });
-
-  if (rankingCloseButton) {
-    rankingCloseButton.addEventListener("click", () => {
-      playMainSfx();
-      closeRankingModal();
-    });
-  }
-  if (rankingBackdrop) {
-    rankingBackdrop.addEventListener("click", () => {
-      closeRankingModal();
-    });
-  }
-  if (rankingForm) {
-    rankingForm.addEventListener("submit", handleRankingSubmit);
-  }
-  if (rankingHandleInput) {
-    rankingHandleInput.addEventListener("input", () => {
-      rankingHandleInput.setCustomValidity("");
-    });
-    rankingHandleInput.addEventListener("blur", () => {
-      const normalized = normalizeHandle(rankingHandleInput.value);
-      rankingHandleInput.value = normalized ? `@${normalized}` : "";
-    });
-  }
-  document.addEventListener("keydown", handleRankingKeydown);
-
-  if (langButtons.length) {
-    langButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        playMainSfx();
-        changeLanguage(btn.dataset.lang);
-      });
-    });
-  }
-}
-
-function mountStore() {
-  game.subscribe((state) => {
-    enqueueRender(state);
-  });
-}
-
-function init() {
-  initUI();
-  langButtons = Array.from(document.querySelectorAll("[data-lang]"));
-  initAudio({ toggleButton: bgmToggleButton });
-  changeLanguage(getLanguage());
-  updateRankingFormPlaceholders();
-  attachEventListeners();
-  mountStore();
-  screens.showTop();
-  if (!isBgmUnlocked()) {
-    attemptAutoPlayMenuBgm();
-  }
-}
-
-document.addEventListener("DOMContentLoaded", init);
-
-const toastStyle = document.createElement("style");
-toastStyle.innerHTML = `
-.toast {
-  position: fixed;
-  bottom: 36px;
-  left: 50%;
-  transform: translateX(-50%) translateY(20px);
-  padding: 12px 18px;
-  border-radius: 999px;
-  background: rgba(20, 12, 35, 0.94);
-  color: white;
-  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
-  opacity: 0;
-  transition: opacity 0.25s ease, transform 0.25s ease;
-  z-index: 50;
-  font-size: 0.9rem;
-}
-.toast--success {
-  border: 1px solid rgba(87, 242, 135, 0.65);
-}
-.toast--danger {
-  border: 1px solid rgba(255, 59, 107, 0.65);
-  color: #ffb3c7;
-}
-.toast.is-visible {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-.toast--stage {
-  position: relative;
-  left: auto;
-  bottom: auto;
-  transform: translateY(12px);
-  padding: 8px 12px;
-  border-radius: 14px;
-  background: rgba(20, 9, 45, 0.92);
-  box-shadow: 0 12px 24px rgba(13, 5, 32, 0.4);
-  font-size: 0.8rem;
-  min-width: 120px;
-  opacity: 0;
-  white-space: nowrap;
-}
-.toast--stage-success {
-  border: 1px solid rgba(87, 242, 135, 0.65);
-  color: #d4ffe5;
-  text-shadow: 0 0 8px rgba(87, 242, 135, 0.4);
-  box-shadow: 0 14px 28px rgba(20, 60, 40, 0.45), 0 0 20px rgba(87, 242, 135, 0.35);
-  background: linear-gradient(140deg, rgba(30, 80, 50, 0.4), rgba(20, 9, 45, 0.92));
-}
-
-.toast--stage-success-pink {
-  border: 1px solid rgba(255, 110, 210, 0.7);
-  color: #ffd8ff;
-  text-shadow: 0 0 8px rgba(255, 120, 220, 0.6);
-  box-shadow: 0 14px 28px rgba(120, 20, 90, 0.35), 0 0 20px rgba(255, 110, 210, 0.3);
-  background: linear-gradient(140deg, rgba(255, 120, 230, 0.18), rgba(40, 0, 70, 0.9));
-}
-.toast--stage.is-visible {
-  transform: translateY(0);
-  opacity: 1;
-}
-`;
-document.head.appendChild(toastStyle);
-
-document.addEventListener(
-  "gesturestart",
-  (event) => {
-    event.preventDefault();
-  },
-  { passive: false }
-);
-
-document.addEventListener(
-  "gesturechange",
-  (event) => {
-    event.preventDefault();
-  },
-  { passive: false }
-);
-
-document.addEventListener(
-  "gestureend",
-  (event) => {
-    event.preventDefault();
-  },
-  { passive: false }
-);
-
-function allowsDoubleTap() {
-  return false;
-}
-
-let lastTouchTime = 0;
-
-document.addEventListener(
-  "touchstart",
-  (event) => {
-    if (allowsDoubleTap(event.target)) return;
-    if (event.touches.length > 1) {
-      event.preventDefault();
-      return;
-    }
-    const now = Date.now();
-    if (now - lastTouchTime <= 350) {
-      event.preventDefault();
-      return;
-    }
-    lastTouchTime = now;
-  },
-  { passive: false }
-);
-
-["touchmove", "touchend"].forEach((type) => {
-  document.addEventListener(
-    type,
-    (event) => {
-      if (allowsDoubleTap(event.target)) return;
-      if (event.touches && event.touches.length > 1) {
-        event.preventDefault();
-      }
-    },
-    { passive: false }
-  );
 });
-
-document.addEventListener(
-  "dblclick",
-  (event) => {
-    if (allowsDoubleTap(event.target)) return;
-    event.preventDefault();
-  },
-  { passive: false }
-);
-

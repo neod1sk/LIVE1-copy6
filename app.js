@@ -4,6 +4,21 @@ import { LEVEL_TABLE } from "./src/constants/levels.js";
 import { MODE_SCORE } from "./src/constants/modeScore.js";
 import { createI18n } from "./src/i18n/index.js";
 import { GameStore } from "./src/state/gameStore.js";
+
+const appealImage1 = "/images/reactionaa.jpg";
+const appealImage2 = "/images/reactionbb.jpg";
+const appealImage3 = "/images/reactioncc.jpg";
+const appealImage4 = "/images/reactiondd.jpg";
+
+const appealImageSources = [
+  appealImage1,
+  appealImage2,
+  appealImage3,
+  appealImage4,
+];
+
+
+
 import {
   initAudio,
   unlockBgm,
@@ -389,12 +404,6 @@ const heroSubtitle = document.querySelector(".hero__subtitle");
 const heroInteractiveElements = [heroTitle, heroSubtitle];
 const appealImageArea = document.getElementById("appeal-image-area");
 const appealImage = document.getElementById("appeal-image");
-const appealImageSources = [
-  "./images/reactionaa.jpg",
-  "./images/reactionbb.jpg",
-  "./images/reactioncc.jpg",
-  "./images/reactiondd.jpg",
-];
 const rankingModal = document.getElementById("ranking-modal");
 const rankingBackdrop = rankingModal
   ? rankingModal.querySelector(".ranking-modal__backdrop")

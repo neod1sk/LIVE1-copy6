@@ -18,7 +18,7 @@ export const TRANSLATIONS = {
     "ranking.submit.inProgress": "送信中...",
     "ranking.form.validationHandle": "@IDは英数字とアンダースコアのみ利用できます。",
     "ranking.form.validationMissingScore": "最新のスコアがありません。プレイ後に投稿してください。",
-    "ranking.noScore": "最新のスコアがありません。ゲームをプレイして結果を投稿しよう！",
+    "ranking.noScore": "ユーザー名とXのIDを入力してランキングに参加しよう！",
     "ranking.ready": "ユーザー名と@IDを入力してランキングに投稿しよう！",
     "ranking.currentScoreLabel": "今回のスコア",
     "ranking.currentLevelLabel": "オタレベル",

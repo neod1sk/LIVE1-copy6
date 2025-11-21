@@ -61,7 +61,7 @@
             id="btn-ranking"
             data-i18n="top.ranking"
           >
-            ランキングを見る（近日公開）
+            ランキングを見る
           </button>
         </section>
 
@@ -142,6 +142,154 @@
                 <li data-i18n="howto.section.scoring.item3">・HARD：+13pt</li>
               </ul>
             </section>
+          </div>
+        </section>
+
+        <section class="ranking-modal" id="ranking-modal" hidden>
+          <div class="ranking-modal__backdrop"></div>
+          <div
+            class="ranking-modal__content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ranking-title"
+          >
+            <button
+              class="modal-close"
+              id="btn-close-ranking"
+              type="button"
+              aria-label="ランキングを閉じる"
+            >
+              ×
+            </button>
+            <h2 class="ranking-modal__title" id="ranking-title" data-i18n="ranking.title">
+              🏆 ランキング
+            </h2>
+            <p class="ranking-modal__description" data-i18n="ranking.description">
+              最新のトップ500スコアと、あなたの順位をチェックしよう！
+            </p>
+            <div class="ranking-modal__panels">
+              <div class="ranking-modal__panel ranking-modal__panel--submit">
+                <h3 class="ranking-modal__panel-title" data-i18n="ranking.submitTitle">
+                  スコアを投稿
+                </h3>
+                <form id="ranking-form" class="ranking-form" autocomplete="on">
+                  <div class="ranking-form__field">
+                    <label
+                      class="ranking-form__label"
+                      for="ranking-username"
+                      data-i18n="ranking.form.usernameLabel"
+                    >
+                      ニックネーム
+                    </label>
+                    <input
+                      class="ranking-form__input"
+                      type="text"
+                      id="ranking-username"
+                      name="username"
+                      maxlength="20"
+                      required
+                      placeholder="例：ペンライト太郎"
+                    />
+                  </div>
+                  <div class="ranking-form__field">
+                    <label class="ranking-form__label" for="ranking-handle">
+                      <span class="ranking-form__icon" aria-hidden="true">𝕏</span>
+                      <span data-i18n="ranking.form.handleLabel">X 계정</span>
+                      <span class="ranking-form__optional" data-i18n="ranking.form.handleOptional">
+                        (任意)
+                      </span>
+                    </label>
+                    <input
+                      class="ranking-form__input"
+                      type="text"
+                      id="ranking-handle"
+                      name="handle"
+                      maxlength="30"
+                      placeholder="예시: oshi_light（@는 자동으로 붙어요）"
+                    />
+                    <small
+                      class="ranking-form__hint"
+                      data-i18n="ranking.form.handleHint"
+                    >
+                      @は自動補完されます
+                    </small>
+                  </div>
+                  <div class="ranking-form__score">
+                    <div>
+                      <span
+                        class="ranking-form__score-label"
+                        data-i18n="ranking.currentScoreLabel"
+                      >
+                        今回のスコア
+                      </span>
+                      <strong
+                        class="ranking-form__score-value"
+                        id="ranking-current-score"
+                      >
+                        -
+                      </strong>
+                    </div>
+                    <div>
+                      <span
+                        class="ranking-form__score-label"
+                        data-i18n="ranking.currentLevelLabel"
+                      >
+                        オタレベル
+                      </span>
+                      <strong
+                        class="ranking-form__score-value"
+                        id="ranking-current-level"
+                      >
+                        -
+                      </strong>
+                    </div>
+                  </div>
+                  <p class="ranking-form__note" id="ranking-note" data-i18n="ranking.noScore">
+                    最新のスコアがありません。ゲームをプレイして結果を投稿しよう！
+                  </p>
+                  <button
+                    class="cta-button ranking-form__submit"
+                    id="ranking-submit"
+                    type="submit"
+                    data-i18n="ranking.form.submit"
+                  >
+                    ランキングに投稿
+                  </button>
+                </form>
+                <div class="ranking-modal__footnote" data-i18n="ranking.notice">
+                  同スコアの場合は先に投稿した人が上位に表示されます。
+                </div>
+              </div>
+              <div class="ranking-modal__panel ranking-modal__panel--list">
+                <div class="ranking-modal__list-header">
+                  <h3 class="ranking-modal__panel-title" data-i18n="ranking.list.title">
+                    トップ500
+                  </h3>
+                  <p class="ranking-modal__status" id="ranking-status" data-state="idle"></p>
+                </div>
+                <ol class="ranking-list" id="ranking-list">
+                  <li class="ranking-list__empty" data-i18n="ranking.list.empty">
+                    まだ投稿がありません
+                  </li>
+                </ol>
+                <p class="ranking-modal__caption" data-i18n="ranking.list.more">
+                  500位以内のみ表示しています。
+                </p>
+              </div>
+              <div class="ranking-modal__panel ranking-modal__panel--personal">
+                <h3 class="ranking-modal__panel-title" data-i18n="ranking.personal.title">
+                  あなたの順位
+                </h3>
+                <div id="ranking-personal" class="ranking-personal">
+                  <p
+                    class="ranking-personal__empty"
+                    data-i18n="ranking.personal.unavailable"
+                  >
+                    まだ投稿がありません。
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </main>
@@ -291,6 +439,13 @@
               トップに戻る
             </button>
           </div>
+          <button
+            class="cta-button cta-button--outline result-card__ranking-button"
+            id="btn-ranking-result"
+            data-i18n="top.ranking"
+          >
+            ランキングを見る
+          </button>
           <div class="share">
             <button class="share__button" id="btn-share" data-i18n="share.button">
               Xでシェア

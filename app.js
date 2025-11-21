@@ -1,3 +1,4 @@
+import { createClient } from "@supabase/supabase-js";
 import { PENLIGHT_COLORS } from "./src/constants/colors.js";
 import { LEVEL_TABLE } from "./src/constants/levels.js";
 import { MODE_SCORE } from "./src/constants/modeScore.js";
@@ -34,6 +35,48 @@ const colors = PENLIGHT_COLORS;
 const levelTable = LEVEL_TABLE;
 const modeScore = MODE_SCORE;
 
+const fallbackSupabaseConfig = {
+  url: "https://cznwtorlerzmstnohzpq.supabase.co",
+  anonKey:
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6bnd0b3JsZXJ6bXN0bm9oenBxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2NDE2NTQsImV4cCI6MjA3OTIxNzY1NH0.Uc8GakAYzlqZCV-LstJl_Xx7Kj3j_CXj7Z3GHsvqvlc",
+};
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || fallbackSupabaseConfig.url;
+const supabaseAnonKey =
+  import.meta.env.VITE_SUPABASE_ANON_KEY || fallbackSupabaseConfig.anonKey;
+
+const supabase =
+  typeof supabaseUrl === "string" &&
+  supabaseUrl &&
+  typeof supabaseAnonKey === "string" &&
+  supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey)
+    : null;
+
+const RANKING_TABLE = "rankings";
+const PLAYER_ID_STORAGE_KEY = "oshi-player-id";
+
+const getOrCreatePlayerId = () => {
+  try {
+    const stored = localStorage.getItem(PLAYER_ID_STORAGE_KEY);
+    if (stored) {
+      return stored;
+    }
+    const generated =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(PLAYER_ID_STORAGE_KEY, generated);
+    return generated;
+  } catch (error) {
+    console.warn("Failed to access localStorage for player id:", error);
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
+
+const playerId = getOrCreatePlayerId();
+const isRankingEnabled = Boolean(supabase);
+
 const { t, setLanguage, getLanguage, supportedLanguages } = createI18n();
 let langButtons = [];
 
@@ -52,6 +95,20 @@ const hexToRgb = (hex) => {
   const b = intVal & 255;
   return { r, g, b };
 };
+
+const escapeHtml = (value = "") =>
+  String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const normalizeHandle = (value = "") =>
+  String(value)
+    .replace(/\s+/g, "")
+    .replace(/^@+/, "")
+    .replace(/[^0-9A-Za-z_]/g, "");
 
 const hexToRgba = (hex, alpha = 1) => {
   const { r, g, b } = hexToRgb(hex);
@@ -338,6 +395,21 @@ const appealImageSources = [
   "./images/reactioncc.jpg",
   "./images/reactiondd.jpg",
 ];
+const rankingModal = document.getElementById("ranking-modal");
+const rankingBackdrop = rankingModal
+  ? rankingModal.querySelector(".ranking-modal__backdrop")
+  : null;
+const rankingCloseButton = document.getElementById("btn-close-ranking");
+const rankingForm = document.getElementById("ranking-form");
+const rankingSubmitButton = document.getElementById("ranking-submit");
+const rankingStatus = document.getElementById("ranking-status");
+const rankingListElement = document.getElementById("ranking-list");
+const rankingUsernameInput = document.getElementById("ranking-username");
+const rankingHandleInput = document.getElementById("ranking-handle");
+const rankingCurrentScoreValue = document.getElementById("ranking-current-score");
+const rankingCurrentLevelValue = document.getElementById("ranking-current-level");
+const rankingNote = document.getElementById("ranking-note");
+const rankingPersonalContainer = document.getElementById("ranking-personal");
 
 function resetViewportScroll(target) {
   if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
@@ -366,6 +438,13 @@ let previewItems = [];
 let lastCountdownTime = null;
 let lastFeverCountdownTime = null;
 let lastAppealLevel = null;
+let latestResultState = null;
+let rankingEntriesCache = [];
+let rankingStatusKey = "";
+let rankingStatusState = "idle";
+let isRankingRefreshing = false;
+let latestPersonalEntry = null;
+let personalEntriesCache = [];
 
 const renderCache = {
   score: undefined,
@@ -832,6 +911,14 @@ function updateUI(state, { force = false } = {}) {
 }
 
 function populateResult(state) {
+  const levelNames = getLevelNamesForScore(state.score);
+  latestResultState = {
+    score: state.score,
+    responses: state.responses,
+    mode: state.mode,
+    otaLevel: levelNames,
+  };
+  updateRankingScoreState();
   resultScore.textContent = state.score;
   const levelInfo = getLevelInfoByScore(state.score);
   const levelName = getLevelName(levelInfo);
@@ -872,6 +959,7 @@ function handleFeverSwing(e) {
 }
 
 function showScreenPlay() {
+  closeRankingModal();
   resumeAudioContext();
   if (!isBgmUnlocked()) {
     unlockBgm(); // 初回のユーザー操作でBGM再生を解禁
@@ -929,6 +1017,507 @@ function restoreHistory() {
     .join("");
 }
 
+function getLevelNamesForScore(score) {
+  const levelInfo = getLevelInfoByScore(score);
+  return {
+    ja: getLevelName(levelInfo, "ja"),
+    en: getLevelName(levelInfo, "en"),
+    ko: getLevelName(levelInfo, "ko"),
+  };
+}
+
+function updateRankingScoreState() {
+  if (!rankingCurrentScoreValue || !rankingCurrentLevelValue || !rankingNote || !rankingSubmitButton) {
+    return;
+  }
+  const hasResult =
+    latestResultState &&
+    Number.isFinite(Number(latestResultState.score)) &&
+    typeof latestResultState.otaLevel === "object";
+  if (hasResult) {
+    rankingCurrentScoreValue.textContent = Number(latestResultState.score).toLocaleString();
+    const activeLang = getLanguage();
+    const levelLabel =
+      latestResultState.otaLevel?.[activeLang] ||
+      latestResultState.otaLevel?.ja ||
+      "-";
+    rankingCurrentLevelValue.textContent = levelLabel;
+    rankingNote.textContent = t("ranking.ready");
+  } else {
+    rankingCurrentScoreValue.textContent = "-";
+    rankingCurrentLevelValue.textContent = "-";
+    rankingNote.textContent = t("ranking.noScore");
+  }
+  rankingSubmitButton.disabled = !hasResult || !isRankingEnabled;
+}
+
+function applyRankingStatus() {
+  if (!rankingStatus) return;
+  rankingStatus.dataset.state = rankingStatusState;
+  if (!rankingStatusKey) {
+    rankingStatus.textContent = "";
+    rankingStatus.hidden = true;
+    return;
+  }
+  rankingStatus.hidden = false;
+  rankingStatus.textContent = t(rankingStatusKey);
+}
+
+function setRankingStatus({ key = "", state = "idle" } = {}) {
+  rankingStatusKey = key;
+  rankingStatusState = state;
+  applyRankingStatus();
+}
+
+function updateRankingFormPlaceholders() {
+  const lang = getLanguage();
+  if (rankingUsernameInput) {
+    const usernamePlaceholders = {
+      ja: "例：ペンライト太郎",
+      en: "e.g. John Doe",
+      ko: "예시: 홍길동",
+    };
+    rankingUsernameInput.placeholder =
+      usernamePlaceholders[lang] || usernamePlaceholders.en;
+  }
+  if (rankingHandleInput) {
+    const handlePlaceholders = {
+      ja: "例：oshi_light（@は自動で付きます）",
+      en: "e.g. oshi_light (@ is added automatically)",
+      ko: "예시: oshi_light（@는 자동으로 붙어요）",
+    };
+    rankingHandleInput.placeholder =
+      handlePlaceholders[lang] || handlePlaceholders.en;
+  }
+  const handleLabelSpan = document.querySelector('[data-i18n="ranking.form.handleLabel"]');
+  if (handleLabelSpan) {
+    if (!handleLabelSpan.dataset.defaultLabel) {
+      handleLabelSpan.dataset.defaultLabel = handleLabelSpan.textContent;
+    }
+    handleLabelSpan.textContent =
+      lang === "ja"
+        ? "Xアカウント"
+        : lang === "en"
+        ? "X Account"
+        : handleLabelSpan.dataset.defaultLabel;
+  }
+}
+
+const resolveLevelLabel = (entry, lang) =>
+  entry[`ota_level_${lang}`] || entry.ota_level_ja || entry.ota_level_en || entry.ota_level_ko || "-";
+
+function formatRankLabel(rank) {
+  if (!Number.isFinite(rank)) return "";
+  return t("ranking.list.position", { rank: rank.toLocaleString() });
+}
+
+function renderRankingList(entries = []) {
+  if (!rankingListElement) return;
+  if (!entries.length) {
+    rankingListElement.innerHTML = `<li class="ranking-list__empty">${t("ranking.list.empty")}</li>`;
+    return;
+  }
+  const pointsUnit = t("history.pointsUnit");
+  const activeLang = getLanguage();
+  rankingListElement.innerHTML = entries
+    .map((entry, index) => {
+      const rank = index + 1;
+      const username = entry.username ? escapeHtml(entry.username) : t("ranking.anonymous");
+      const handle = normalizeHandle(entry.handle || "");
+      const handleHtml = handle
+        ? `<a class="ranking-list__handle" href="https://x.com/${encodeURIComponent(
+            handle
+          )}" target="_blank" rel="noopener noreferrer">${escapeHtml(`@${handle}`)}</a>`
+        : `<span class="ranking-list__handle ranking-list__handle--empty">-</span>`;
+      const score = Number(entry.score);
+      const scoreText = Number.isFinite(score) ? score.toLocaleString() : "0";
+      const levelLabel = escapeHtml(resolveLevelLabel(entry, activeLang));
+      const rankLabel = formatRankLabel(rank);
+      const createdAt = entry.created_at ? new Date(entry.created_at).toLocaleString() : "";
+      return `
+        <li class="ranking-list__item" data-ranking-id="${entry.id || ""}">
+          <span class="ranking-list__rank">${rankLabel}</span>
+          <div class="ranking-list__info">
+            <span class="ranking-list__name">${username}</span>
+            ${handleHtml}
+            <div class="ranking-list__meta">${levelLabel}</div>
+            <div class="ranking-list__meta ranking-list__timestamp">${escapeHtml(createdAt)}</div>
+          </div>
+          <div class="ranking-list__score">
+            <span class="ranking-list__score-value">${scoreText}</span>
+            <span class="ranking-list__score-unit">${pointsUnit}</span>
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+}
+
+function renderRankingPersonal(entry, { insideTop = false } = {}) {
+  if (!rankingPersonalContainer) return;
+  rankingPersonalContainer.innerHTML = "";
+  if (!entry) {
+    rankingPersonalContainer.innerHTML = `<p class="ranking-personal__empty">${t(
+      "ranking.personal.unavailable"
+    )}</p>`;
+    return;
+  }
+  const activeLang = getLanguage();
+  const rankValue = Number(entry.rank);
+  const hasRank = Number.isFinite(rankValue) && rankValue > 0;
+  const rankText = hasRank ? formatRankLabel(rankValue) : "-";
+  const extraMessage =
+    insideTop || !hasRank
+      ? ""
+      : `<p class="ranking-personal__empty">${t("ranking.personal.outside", {
+          rank: rankValue.toLocaleString(),
+        })}</p>`;
+  const scoreText = Number(entry.score).toLocaleString();
+  const levelLabel = escapeHtml(
+    entry[`ota_level_${activeLang}`] ||
+      entry.ota_level_ja ||
+      entry.ota_level_en ||
+      entry.ota_level_ko ||
+      "-"
+  );
+  const latestCard = document.createElement("div");
+  latestCard.className = "ranking-personal__card";
+  latestCard.innerHTML = `
+    <div>
+      <span class="ranking-personal__label">${t("ranking.personal.title")}</span>
+      <div class="ranking-personal__rank">${rankText}</div>
+    </div>
+    <div>
+      <span class="ranking-personal__label">${t("ranking.personal.latestScore")}</span>
+      <div class="ranking-personal__value">${scoreText}</div>
+    </div>
+    <div>
+      <span class="ranking-personal__label">${t("ranking.personal.latestLevel")}</span>
+      <div class="ranking-personal__value">${levelLabel}</div>
+    </div>
+    <button class="ranking-personal__delete-btn" type="button">
+      ${t("ranking.personal.deleteLatest")}
+    </button>
+  `;
+  const deleteButton = latestCard.querySelector(".ranking-personal__delete-btn");
+  deleteButton?.addEventListener("click", () => {
+    const confirmed = window.confirm(t("ranking.personal.deleteConfirm"));
+    if (!confirmed) return;
+    deleteRankingEntry(entry.id, { isLatest: true });
+  });
+  rankingPersonalContainer.appendChild(latestCard);
+  rankingPersonalContainer.insertAdjacentHTML("beforeend", extraMessage);
+
+  if (personalEntriesCache.length > 1) {
+    const historyTitle = document.createElement("h4");
+    historyTitle.className = "ranking-personal__history-title";
+    historyTitle.textContent = t("ranking.personal.allEntries");
+    rankingPersonalContainer.appendChild(historyTitle);
+    const historyList = document.createElement("ul");
+    historyList.className = "ranking-personal__history-list";
+    personalEntriesCache.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "ranking-personal__history-item";
+      const itemScore = Number(item.score).toLocaleString();
+      const itemLevel =
+        item[`ota_level_${activeLang}`] ||
+        item.ota_level_ja ||
+        item.ota_level_en ||
+        item.ota_level_ko ||
+        "-";
+      const itemCreatedAt = item.created_at
+        ? new Date(item.created_at).toLocaleString()
+        : "";
+      li.innerHTML = `
+        <div class="ranking-personal__history-main">
+          <strong>${itemScore}</strong> / ${escapeHtml(itemLevel)}
+          <small>${escapeHtml(itemCreatedAt)}</small>
+        </div>
+        <button class="ranking-personal__history-delete" type="button" data-entry-id="${item.id}">
+          ×
+        </button>
+      `;
+      historyList.appendChild(li);
+    });
+    rankingPersonalContainer.appendChild(historyList);
+  }
+
+  rankingPersonalContainer
+    .querySelectorAll(".ranking-personal__history-delete")
+    .forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        const entryId = event.currentTarget.dataset.entryId;
+        if (!entryId) return;
+        const confirmed = window.confirm(t("ranking.personal.deleteEntryConfirm"));
+        if (!confirmed) return;
+        deleteRankingEntry(entryId, { isLatest: entryId === entry.id });
+      });
+    });
+}
+
+async function calculateRankForEntry(entry) {
+  if (!supabase || !entry) return null;
+  const entryScore = Number(entry.score) || 0;
+  const entryCreatedAt = entry.created_at ? new Date(entry.created_at).toISOString() : null;
+  if (!entryCreatedAt) return null;
+  try {
+    const filter = [
+      `score.gt.${entryScore}`,
+      `and(score.eq.${entryScore},created_at.lt.${entryCreatedAt})`,
+    ].join(",");
+    const { count, error } = await supabase
+      .from(RANKING_TABLE)
+      .select("id", { head: true, count: "exact" })
+      .or(filter);
+    if (error) throw error;
+    const rank = Number(count || 0) + 1;
+    return rank;
+  } catch (error) {
+    console.error("Failed to calculate rank:", error);
+    return null;
+  }
+}
+
+async function fetchPersonalLatestEntry({ force = false } = {}) {
+  if (!supabase) {
+    personalEntriesCache = [];
+    latestPersonalEntry = null;
+    return null;
+  }
+  if (!force && latestPersonalEntry) {
+    return latestPersonalEntry;
+  }
+  try {
+    const { data, error } = await supabase
+      .from(RANKING_TABLE)
+      .select("*")
+      .eq("player_id", playerId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    personalEntriesCache = Array.isArray(data) ? data : [];
+    latestPersonalEntry = personalEntriesCache.length ? personalEntriesCache[0] : null;
+    return latestPersonalEntry;
+  } catch (error) {
+    console.error("Failed to fetch personal entry:", error);
+    return latestPersonalEntry;
+  }
+}
+
+async function updatePersonalRanking() {
+  if (!supabase) {
+    personalEntriesCache = [];
+    latestPersonalEntry = null;
+    renderRankingPersonal(null);
+    return;
+  }
+  const entry = await fetchPersonalLatestEntry({ force: true });
+  if (!entry) {
+    renderRankingPersonal(null);
+    return;
+  }
+  const insideTop = rankingEntriesCache.some((topEntry) => topEntry.id === entry.id);
+  const rank = insideTop
+    ? rankingEntriesCache.findIndex((topEntry) => topEntry.id === entry.id) + 1
+    : await calculateRankForEntry(entry);
+  latestPersonalEntry =
+    entry && Number.isFinite(rank) ? { ...entry, rank } : { ...entry, rank: null };
+  renderRankingPersonal(latestPersonalEntry, { insideTop });
+}
+
+async function refreshRankingList({ force = false } = {}) {
+  if (!rankingListElement) return;
+  if (!supabase) {
+    rankingEntriesCache = [];
+    rankingListElement.innerHTML = `<li class="ranking-list__empty">${t("ranking.list.empty")}</li>`;
+    setRankingStatus({ key: "ranking.disabled", state: "disabled" });
+    personalEntriesCache = [];
+    latestPersonalEntry = null;
+    renderRankingPersonal(null);
+    return;
+  }
+  if (isRankingRefreshing && !force) {
+    return;
+  }
+  isRankingRefreshing = true;
+  setRankingStatus({ key: "ranking.loading", state: "loading" });
+  try {
+    const { data, error } = await supabase
+      .from(RANKING_TABLE)
+      .select("*")
+      .order("score", { ascending: false })
+      .order("created_at", { ascending: true })
+      .limit(500);
+    if (error) {
+      throw error;
+    }
+    rankingEntriesCache = Array.isArray(data) ? data : [];
+    renderRankingList(rankingEntriesCache);
+    setRankingStatus({ key: "", state: "idle" });
+    await updatePersonalRanking();
+  } catch (error) {
+    console.error("Failed to fetch ranking:", error);
+    if (!rankingEntriesCache.length) {
+      rankingListElement.innerHTML = `<li class="ranking-list__empty">${t(
+        "ranking.list.empty"
+      )}</li>`;
+    }
+    setRankingStatus({ key: "ranking.form.error", state: "error" });
+  } finally {
+    isRankingRefreshing = false;
+  }
+}
+
+const isRankingModalVisible = () => rankingModal && !rankingModal.hidden;
+
+function closeRankingModal() {
+  if (!rankingModal || rankingModal.hidden) return;
+  rankingModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function openRankingModal({ focusForm = false } = {}) {
+  if (!rankingModal) return;
+  if (!rankingModal.hidden) {
+    updateRankingScoreState();
+    applyRankingStatus();
+    renderRankingList(rankingEntriesCache);
+    renderRankingPersonal(latestPersonalEntry, {
+      insideTop:
+        latestPersonalEntry &&
+        rankingEntriesCache.some((entry) => entry.id === latestPersonalEntry.id),
+    });
+    if (isRankingEnabled) {
+      refreshRankingList({ force: true });
+    }
+    return;
+  }
+  rankingModal.hidden = false;
+  document.body.classList.add("modal-open");
+  updateRankingScoreState();
+  renderRankingList(rankingEntriesCache);
+  applyRankingStatus();
+  renderRankingPersonal(latestPersonalEntry, {
+    insideTop:
+      latestPersonalEntry &&
+      rankingEntriesCache.some((entry) => entry.id === latestPersonalEntry.id),
+  });
+  if (focusForm && rankingUsernameInput) {
+    requestAnimationFrame(() => {
+      rankingUsernameInput.focus();
+    });
+  }
+  refreshRankingList({ force: true });
+}
+
+async function handleRankingSubmit(event) {
+  event.preventDefault();
+  if (!rankingForm || !rankingSubmitButton) return;
+  if (!isRankingEnabled) {
+    showToast(t("ranking.disabled"), "danger");
+    return;
+  }
+  const hasResult =
+    latestResultState &&
+    Number.isFinite(Number(latestResultState.score)) &&
+    typeof latestResultState.otaLevel === "object";
+  if (!hasResult) {
+    showToast(t("ranking.form.validationMissingScore"), "danger");
+    return;
+  }
+  const usernameRaw = rankingUsernameInput ? rankingUsernameInput.value.trim() : "";
+  const handleRaw = rankingHandleInput ? rankingHandleInput.value.trim() : "";
+  const hasHandle = !!handleRaw;
+  if (!usernameRaw) {
+    rankingUsernameInput?.focus();
+    return;
+  }
+  let normalizedHandle = "";
+  if (hasHandle) {
+    const trimmedHandle = handleRaw.replace(/\s+/g, "").replace(/^@+/, "");
+    normalizedHandle = normalizeHandle(handleRaw);
+    if (!normalizedHandle || normalizedHandle !== trimmedHandle) {
+      if (rankingHandleInput) {
+        rankingHandleInput.setCustomValidity(t("ranking.form.validationHandle"));
+        rankingHandleInput.reportValidity();
+        rankingHandleInput.focus();
+      }
+      return;
+    }
+    if (rankingHandleInput) {
+      rankingHandleInput.setCustomValidity("");
+      rankingHandleInput.value = `@${normalizedHandle}`;
+    }
+  } else if (rankingHandleInput) {
+    rankingHandleInput.setCustomValidity("");
+    rankingHandleInput.value = "";
+  }
+  const defaultSubmitLabel = t("ranking.form.submit");
+  rankingSubmitButton.disabled = true;
+  rankingSubmitButton.textContent = t("ranking.submit.inProgress");
+  try {
+    const payload = {
+      player_id: playerId,
+      username: usernameRaw.slice(0, 32),
+      handle: normalizedHandle || null,
+      score: Number(latestResultState.score) || 0,
+      ota_level_ja: latestResultState.otaLevel?.ja || "",
+      ota_level_en: latestResultState.otaLevel?.en || "",
+      ota_level_ko: latestResultState.otaLevel?.ko || "",
+      language: getLanguage(),
+    };
+    const { data, error } = await supabase
+      .from(RANKING_TABLE)
+      .insert(payload)
+      .select("*")
+      .maybeSingle();
+    if (error) {
+      throw error;
+    }
+    if (data) {
+      latestPersonalEntry = { ...data };
+    }
+    showToast(t("ranking.form.success"), "success");
+    await refreshRankingList({ force: true });
+  } catch (error) {
+    console.error("Failed to submit ranking:", error);
+    showToast(t("ranking.form.error"), "danger");
+  } finally {
+    rankingSubmitButton.textContent = defaultSubmitLabel;
+    updateRankingScoreState();
+  }
+}
+
+async function deleteRankingEntry(entryId, { isLatest = false } = {}) {
+  if (!supabase || !entryId) return;
+  try {
+    const { error } = await supabase
+      .from(RANKING_TABLE)
+      .delete()
+      .eq("id", entryId)
+      .eq("player_id", playerId);
+    if (error) {
+      throw error;
+    }
+    showToast(t("ranking.personal.deleteSuccess"), "success");
+    personalEntriesCache = personalEntriesCache.filter((entry) => entry.id !== entryId);
+    if (latestPersonalEntry && latestPersonalEntry.id === entryId) {
+      latestPersonalEntry = null;
+    }
+    await refreshRankingList({ force: true });
+  } catch (error) {
+    console.error("Failed to delete ranking entry:", error);
+    showToast(t("ranking.personal.deleteError"), "danger");
+  }
+}
+
+function handleRankingKeydown(event) {
+  if (event.key === "Escape" && isRankingModalVisible()) {
+    event.preventDefault();
+    closeRankingModal();
+  }
+}
+
 function updateLangButtons() {
   if (!langButtons || !langButtons.length) return;
   const activeLang = getLanguage();
@@ -972,7 +1561,16 @@ function changeLanguage(lang) {
   setLanguage(nextLang);
   applyTranslations();
   updateLangButtons();
+  updateRankingFormPlaceholders();
   restoreHistory();
+  renderRankingList(rankingEntriesCache);
+  renderRankingPersonal(latestPersonalEntry, {
+    insideTop:
+      latestPersonalEntry &&
+      rankingEntriesCache.some((entry) => entry.id === latestPersonalEntry.id),
+  });
+  updateRankingScoreState();
+  applyRankingStatus();
   if (game && game.state) {
     enqueueRender(game.state, { force: true });
   }
@@ -1072,7 +1670,15 @@ function attachEventListeners() {
   if (btnRanking) {
     btnRanking.addEventListener("click", () => {
       playMainSfx();
-      showToast(t("top.ranking"), "success");
+      openRankingModal({ focusForm: !!latestResultState });
+    });
+  }
+  const btnRankingResult = document.getElementById("btn-ranking-result");
+  if (btnRankingResult) {
+    btnRankingResult.addEventListener("click", () => {
+      playMainSfx();
+      screens.showTop();
+      openRankingModal({ focusForm: !!latestResultState });
     });
   }
   const modeRadios = document.querySelectorAll('input[name="mode"]');
@@ -1146,6 +1752,31 @@ function attachEventListeners() {
     }
   });
 
+  if (rankingCloseButton) {
+    rankingCloseButton.addEventListener("click", () => {
+      playMainSfx();
+      closeRankingModal();
+    });
+  }
+  if (rankingBackdrop) {
+    rankingBackdrop.addEventListener("click", () => {
+      closeRankingModal();
+    });
+  }
+  if (rankingForm) {
+    rankingForm.addEventListener("submit", handleRankingSubmit);
+  }
+  if (rankingHandleInput) {
+    rankingHandleInput.addEventListener("input", () => {
+      rankingHandleInput.setCustomValidity("");
+    });
+    rankingHandleInput.addEventListener("blur", () => {
+      const normalized = normalizeHandle(rankingHandleInput.value);
+      rankingHandleInput.value = normalized ? `@${normalized}` : "";
+    });
+  }
+  document.addEventListener("keydown", handleRankingKeydown);
+
   if (langButtons.length) {
     langButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1167,6 +1798,7 @@ function init() {
   langButtons = Array.from(document.querySelectorAll("[data-lang]"));
   initAudio({ toggleButton: bgmToggleButton });
   changeLanguage(getLanguage());
+  updateRankingFormPlaceholders();
   attachEventListeners();
   mountStore();
   screens.showTop();

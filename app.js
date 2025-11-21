@@ -1,19 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 
 /* ==========================================================================
-   1. UTILS & CONSTANTS (Inlined from src/constants/*.js and utils)
+   1. UTILS & CONSTANTS
    ========================================================================== */
 
-// -- Asset Resolution for GitHub Pages --
-// Automatically prepends the base path (e.g. /LIVE1-copy6/) to assets
+// -- Asset Resolution --
 const resolveAsset = (path) => {
   const base = (import.meta.env && import.meta.env.BASE_URL) || "/";
-  // Remove leading slash if present to avoid double slashes
   const cleanPath = path.startsWith("/") ? path.slice(1) : path;
   return `${base}${cleanPath}`;
 };
 
-// -- Deep Clone (Simple JSON version for state) --
+// -- Deep Clone --
 const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
 
 // -- COLORS --
@@ -63,7 +61,6 @@ const MODE_SCORE = {
 };
 
 // -- IMAGES --
-// Use resolveAsset to ensure they load correctly on GitHub Pages
 const appealImageSources = [
   resolveAsset("images/reactionaa.jpg"),
   resolveAsset("images/reactionbb.jpg"),
@@ -72,7 +69,7 @@ const appealImageSources = [
 ];
 
 /* ==========================================================================
-   2. I18N (Inlined from src/i18n/*.js)
+   2. I18N
    ========================================================================== */
 
 const TRANSLATIONS = {
@@ -470,7 +467,7 @@ const createI18n = () => {
 };
 
 /* ==========================================================================
-   3. GAME STATE (Inlined from src/state/gameStore.js)
+   3. GAME STATE
    ========================================================================== */
 
 const noop = () => {};
@@ -893,31 +890,32 @@ const getOrCreatePlayerId = () => {
 const playerId = getOrCreatePlayerId();
 const isRankingEnabled = Boolean(supabase);
 
-/* --- Audio System (Consolidated & Refactored) --- */
-const BGM_MENU = new Audio(resolveAsset("audio/maou_bgm_8bit13.mp3"));
+/* --- Audio System --- */
+// Updated paths to match "sounds" directory
+const BGM_MENU = new Audio(resolveAsset("sounds/menu.mp3"));
 BGM_MENU.loop = true;
 BGM_MENU.volume = 0.4;
 
-const BGM_GAME = new Audio(resolveAsset("audio/maou_bgm_8bit26.mp3"));
+const BGM_GAME = new Audio(resolveAsset("sounds/play.mp3"));
 BGM_GAME.loop = true;
 BGM_GAME.volume = 0.4;
 
-const SFX_BUTTON = new Audio(resolveAsset("audio/se_button.mp3"));
-const SFX_START = new Audio(resolveAsset("audio/se_start.mp3"));
-const SFX_ARROW = new Audio(resolveAsset("audio/se_arrow.mp3"));
-const SFX_END = new Audio(resolveAsset("audio/se_end.mp3")); // Also used as Result BGM
-const SFX_PAUSE = new Audio(resolveAsset("audio/se_pause.mp3"));
-const SFX_MAIN = new Audio(resolveAsset("audio/se_main.mp3")); // Level up sound?
-const SFX_LIGHTSTICK = new Audio(resolveAsset("audio/se_lightstick.mp3"));
-const SFX_ARIGATO = new Audio(resolveAsset("audio/voice_arigato.mp3"));
-const SFX_HAKUSHU = new Audio(resolveAsset("audio/se_hakushu.mp3"));
-const SFX_APPEAL = new Audio(resolveAsset("audio/maou_se_8bit24.mp3"));
+// SFX Mapping
+const SFX_BUTTON = new Audio(resolveAsset("sounds/arrow.mp3")); // fallback if start.mp3 not desired for generic
+const SFX_START = new Audio(resolveAsset("sounds/start.mp3"));
+const SFX_ARROW = new Audio(resolveAsset("sounds/arrow.mp3"));
+const SFX_END = new Audio(resolveAsset("sounds/end.mp3")); 
+const SFX_PAUSE = new Audio(resolveAsset("sounds/pause.mp3"));
+const SFX_MAIN = new Audio(resolveAsset("sounds/main.mp3")); 
+const SFX_LIGHTSTICK = new Audio(resolveAsset("sounds/Lightstick.mp3"));
+const SFX_ARIGATO = new Audio(resolveAsset("sounds/arigato.mp3"));
+const SFX_HAKUSHU = new Audio(resolveAsset("sounds/hakushu.mp3"));
+const SFX_APPEAL = new Audio(resolveAsset("sounds/AppealTime.mp3"));
 
 let currentBgm = null;
 let isBgmUnlocked = false;
 
 const initAudio = () => {
-  // Try to resume AudioContext if it exists (not using web audio api directly here but good practice)
   // Preload critical audio
   [BGM_MENU, BGM_GAME, SFX_END, SFX_START].forEach(a => a.load());
 };
@@ -925,17 +923,20 @@ const initAudio = () => {
 const unlockBgm = () => {
   if (isBgmUnlocked) return;
   isBgmUnlocked = true;
-  // Attempt to play and immediately pause to unlock audio on iOS/Android
   [BGM_MENU, BGM_GAME, SFX_END].forEach((audio) => {
+    // Mute, play, pause to unlock
+    const originalVolume = audio.volume;
+    audio.volume = 0;
     audio.play().then(() => {
       audio.pause();
       audio.currentTime = 0;
-    }).catch(() => {});
+      audio.volume = originalVolume;
+    }).catch((e) => console.warn("Audio unlock failed", e));
   });
 };
 
 const stopAllBgm = () => {
-  [BGM_MENU, BGM_GAME, SFX_END].forEach(audio => {
+  [BGM_MENU, BGM_GAME, SFX_END, SFX_APPEAL].forEach(audio => {
     audio.pause();
     audio.currentTime = 0;
   });
@@ -954,6 +955,7 @@ const playBgm = (audioObj) => {
 // SFX Functions
 const playSfx = (audioObj) => {
   if (!isBgmUnlocked) return;
+  // For simple SFX, cloning is good for overlapping sounds
   const clone = audioObj.cloneNode();
   clone.volume = audioObj.volume || 1.0;
   clone.play().catch(e => console.warn("SFX play failed:", e));
@@ -963,17 +965,33 @@ const playButtonSfx = () => playSfx(SFX_BUTTON);
 const playStartSfx = () => playSfx(SFX_START);
 const playArrowSfx = () => playSfx(SFX_ARROW);
 const playPauseSfx = () => playSfx(SFX_PAUSE);
-const playMainSfx = () => playSfx(SFX_MAIN); // Used for fever level up
+const playMainSfx = () => playSfx(SFX_MAIN); 
 const playLightstickSfx = () => playSfx(SFX_LIGHTSTICK);
 const playArigatoSfx = () => playSfx(SFX_ARIGATO);
 const playHakushuSfx = () => playSfx(SFX_HAKUSHU);
-const playAppealTimeSfx = () => playSfx(SFX_APPEAL);
+const playAppealTimeSfx = () => {
+  // Appeal Time BGM is long, treat it like BGM but overlay?
+  // Or just play it. If it's BGM-like, we might want to stop main BGM?
+  // Game says "main timer pauses".
+  // Let's pause Game BGM and play Appeal BGM?
+  // Current logic keeps Game BGM running? 
+  // Original code had `playAppealTimeSfx`.
+  // If it's BGM, we should handle it carefully.
+  // Based on file name AppealTime.mp3, it's likely a track.
+  
+  // Pause current BGM
+  if (currentBgm) currentBgm.pause();
+  
+  SFX_APPEAL.currentTime = 0;
+  SFX_APPEAL.volume = 0.6;
+  SFX_APPEAL.play().catch(e => console.warn(e));
+};
 
 // Special case for End/Result BGM
 const playEndSfx = () => {
-  stopAllBgm(); // Explicitly stop game BGM
+  stopAllBgm(); 
   currentBgm = SFX_END;
-  SFX_END.loop = false; // Ensure it doesn't loop if it's just a jingle
+  SFX_END.loop = false; 
   SFX_END.play().catch(e => console.warn("End SFX failed:", e));
 };
 
@@ -1077,19 +1095,14 @@ const store = new GameStore({
       playMainSfx();
       showToast(message, "success");
       
-      // Image logic with safe bounds
       const imageIndex = Math.min(level - 1, appealImageSources.length - 1);
-      // Use resolveAsset logic implicitly via appealImageSources
       const nextSrc = appealImageSources[imageIndex];
       
       if (nextSrc) {
         const img = document.createElement("img");
         img.src = nextSrc;
         img.className = "fever-reaction-image";
-        // Preload check not strictly necessary if cache is good, but safe to add
         hud.feverOverlay.appendChild(img);
-        
-        // Remove after animation
         setTimeout(() => img.remove(), 1000);
       }
     },
@@ -1097,6 +1110,12 @@ const store = new GameStore({
       playLightstickSfx();
     },
     onFeverEnd: ({ message }) => {
+      // Resume game BGM
+      if (currentBgm && currentBgm === BGM_GAME) {
+        currentBgm.play().catch(() => {});
+      }
+      SFX_APPEAL.pause();
+      
       showToast(message, "info");
       hud.feverOverlay.hidden = true;
       hud.feverText.textContent = "";
@@ -1104,13 +1123,13 @@ const store = new GameStore({
     onTransitionStart: () => {
       playArigatoSfx();
       playHakushuSfx();
-      // Stop game BGM here or in transition complete? 
-      // Let's stop main BGM now to let Arigato shine
-      stopAllBgm();
+      // Stop appeal/game BGM
+      if (currentBgm) currentBgm.pause();
+      SFX_APPEAL.pause();
     },
     onTransitionComplete: (finalState) => {
-      latestResultState = finalState; // Save for ranking
-      playEndSfx(); // Play Result BGM
+      latestResultState = finalState; 
+      playEndSfx(); 
       showResultScreen(finalState);
     },
   },
@@ -1124,7 +1143,7 @@ store.subscribe(render);
 buttons.start.addEventListener("click", () => {
   unlockBgm();
   playButtonSfx();
-  startGame("normal"); // Default to normal, or add mode selection later
+  startGame("normal");
 });
 
 // How to
@@ -1135,6 +1154,7 @@ buttons.howto.addEventListener("click", () => {
 
 // Controls
 buttons.left.addEventListener("click", () => {
+  // playArrowSfx(); // onMatchToast handles this? No, rotation sound.
   playArrowSfx();
   store.rotate(-1);
 });
@@ -1157,7 +1177,7 @@ document.addEventListener("keydown", (e) => {
 buttons.pause.addEventListener("click", () => store.togglePause());
 buttons.resume.addEventListener("click", () => store.resume());
 buttons.showResult.addEventListener("click", () => {
-  store.finish(); // Force finish
+  store.finish(); 
   modals.pause.hidden = true;
 });
 buttons.retry.addEventListener("click", () => {
@@ -1228,24 +1248,20 @@ const initLanguageButtons = () => {
 };
 
 const updateLanguageUI = (lang) => {
-  // Update all data-i18n elements
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     const key = el.dataset.i18n;
     if (key) el.textContent = t(key);
   });
 
-  // Update placeholders
   const usernameInput = document.getElementById("ranking-username");
   const handleInput = document.getElementById("ranking-handle");
   if (usernameInput) usernameInput.placeholder = t("ranking.form.usernamePlaceholder");
   if (handleInput) handleInput.placeholder = t("ranking.form.handlePlaceholder");
 
-  // Update active button state
   document.querySelectorAll(".lang-button").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.lang === lang);
   });
 
-  // Update ranking lists if open (to translate levels/dates)
   if (!modals.ranking.hidden) {
     renderRankingList(rankingEntriesCache);
     renderRankingPersonal(personalEntriesCache);
@@ -1263,7 +1279,7 @@ document.addEventListener("touchstart", (e) => {
 
 document.addEventListener("touchmove", (e) => {
   if (store.state.fever.active) {
-    e.preventDefault(); // Prevent scrolling during fever
+    e.preventDefault(); 
   }
 }, { passive: false });
 
@@ -1275,7 +1291,6 @@ document.addEventListener("touchend", (e) => {
   const diffX = touchEndX - touchStartX;
   const diffY = touchEndY - touchStartY;
 
-  // Simple horizontal swipe detection
   if (Math.abs(diffX) > 30 && Math.abs(diffX) > Math.abs(diffY)) {
     store.swing(diffX > 0 ? 1 : -1);
   }
@@ -1285,21 +1300,17 @@ document.addEventListener("touchend", (e) => {
 /* --- Render Functions --- */
 
 function render(state) {
-  // Sync HUD
   hud.score.textContent = state.score;
   hud.success.textContent = state.successCount;
   hud.timer.textContent = state.timeLeft;
 
-  // Update Target Color
   const targetColor = store.colors[state.targetIndex];
   if (targetColor) {
     hud.targetText.textContent = targetColor.name;
     hud.targetText.style.color = targetColor.code;
-    // Optional: add text shadow for readability
     hud.targetText.style.textShadow = `0 0 10px ${targetColor.code}`;
   }
 
-  // Update Penlight
   if (state.currentIndex !== null) {
     const currentColor = store.colors[state.currentIndex];
     hud.penlightColor.style.backgroundColor = currentColor.code;
@@ -1309,7 +1320,6 @@ function render(state) {
     hud.penlightColor.style.boxShadow = "none";
   }
 
-  // Fever Overlay
   if (state.fever.active) {
     hud.feverOverlay.hidden = false;
     hud.feverText.innerHTML = `${t("fever.title")}<br>${state.fever.timeLeft} ${t("fever.timerUnit")}`;
@@ -1331,7 +1341,6 @@ function showToast(message, variant = "info", options = {}) {
 
   hud.messageArea.appendChild(toast);
   
-  // Trigger reflow for animation
   void toast.offsetWidth;
   toast.classList.add("toast--show");
 
@@ -1377,7 +1386,6 @@ function showResultScreen(state) {
   document.getElementById("result-success").textContent = state.successCount;
   document.getElementById("result-responses").textContent = state.responses;
   
-  // Update ranking form current score display if available
   const currentScoreDisplay = document.getElementById("ranking-current-score");
   const currentLevelDisplay = document.getElementById("ranking-current-level");
   if (currentScoreDisplay) currentScoreDisplay.textContent = state.score;
@@ -1500,7 +1508,6 @@ function renderRankingPersonal(entries) {
     return;
   }
 
-  // Title for history
   const title = document.createElement("h4");
   title.className = "ranking-personal__history-title";
   title.textContent = t("ranking.personal.allEntries");
@@ -1530,7 +1537,6 @@ function renderRankingPersonal(entries) {
       </button>
     `;
 
-    // Attach delete handler
     const deleteBtn = li.querySelector(".ranking-personal__delete-btn");
     deleteBtn.addEventListener("click", async () => {
         if (confirm(t("ranking.personal.deleteEntryConfirm"))) {
@@ -1557,10 +1563,9 @@ async function handleRankingSubmit() {
 
   if (!usernameRaw) {
     usernameInput.focus();
-    return; // Native required validation handles visual cue
+    return; 
   }
 
-  // Basic handle validation (alphanumeric + underscore only)
   let normalizedHandle = handleRaw.replace(/^@/, "");
   if (normalizedHandle && !/^[a-zA-Z0-9_]+$/.test(normalizedHandle)) {
     showToast(t("ranking.form.validationHandle"), "danger");
@@ -1596,11 +1601,9 @@ async function handleRankingSubmit() {
     if (error) throw error;
 
     showToast(t("ranking.form.success"), "success");
-    // Clear inputs
     usernameInput.value = "";
     handleInput.value = "";
     
-    // Refresh lists
     await fetchRankingList();
     await fetchPersonalHistory();
 
@@ -1620,13 +1623,13 @@ async function deleteRankingEntry(entryId) {
       .from(RANKING_TABLE)
       .delete()
       .eq("id", entryId)
-      .eq("player_id", playerId); // RLS security
+      .eq("player_id", playerId); 
 
     if (error) throw error;
 
     showToast(t("ranking.personal.deleteSuccess"), "success");
     await fetchPersonalHistory();
-    await fetchRankingList(); // Also refresh global list
+    await fetchRankingList(); 
   } catch (error) {
     console.error("Failed to delete ranking entry:", error);
     showToast(t("ranking.personal.deleteError"), "danger");
@@ -1637,7 +1640,6 @@ function openRankingModal() {
   document.body.classList.add("modal-open");
   modals.ranking.hidden = false;
   
-  // Populate current score in form
   const scoreVal = document.getElementById("ranking-current-score");
   const levelVal = document.getElementById("ranking-current-level");
   
@@ -1665,16 +1667,13 @@ window.addEventListener("DOMContentLoaded", () => {
   initLanguageButtons();
   updateLanguageUI(getLanguage());
   
-  // Pre-resolve audio paths but wait for user interaction to play
   initAudio();
   
-  // Setup initial visibility
   screens.top.hidden = false;
   screens.game.hidden = true;
   screens.result.hidden = true;
   screens.history.hidden = true;
   
-  // Handle GitHub Pages reload 404s or history api (not strictly needed here for hash routing, but good practice)
   if (!isRankingEnabled) {
     console.warn("Supabase not configured. Ranking features disabled.");
     const rankingBtns = document.querySelectorAll("#btn-ranking, #btn-ranking-result");
